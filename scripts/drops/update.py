@@ -8,8 +8,8 @@ Program to generate the OSRS npc drops JSON dump.
 Reads the monster wiki page text already fetched by ``scripts.monsters.update``,
 parses every ``==Drops==`` table on those pages, and writes the dump to
 ``docs/drops-json/``. Item and npc IDs come from the databases in this
-repository, so the only network access is a single wiki page (``Drop table``)
-holding the shared drop tables, which is cached under ``data/drops/``.
+repository. The only network access is the wiki's shared drop tables and
+include-only ``{{Uniques/...}}`` templates, both cached under ``data/drops/``.
 
 Usage:
     python -m scripts.drops.update
@@ -38,7 +38,8 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
+from urllib.parse import unquote
 
 import config
 from builders.run_log import begin_run
@@ -48,6 +49,7 @@ from scripts.drops.drops_tables import ItemIdLookup, NpcDropsAggregator
 from scripts.drops.drops_wikitext import (
     has_non_numeric_npc_id,
     parse_all_drop_tables,
+    unique_template_titles,
 )
 from scripts.wiki.wiki_page_text import WikiPageText
 
@@ -102,6 +104,88 @@ def load_monster_wikitext() -> Dict[str, str]:
     return current
 
 
+# Reviewed source anchors for bare drop names that are also a later variant's
+# exact item name. The wiki's Giantsoul amulet page declares version 1 as
+# Uncharged (id 30637), and both Royal Titans drop that version; the charged
+# 30638 is created by charging it. Without the anchor, the plain-name fallback
+# picks 30638 because that is the charged item's name.
+REVIEWED_DROP_VERSIONS = {
+    "Giantsoul amulet": "Uncharged",
+}
+
+
+def _item_page_and_version(item) -> Optional[tuple]:
+    """Split an item's wiki URL into its page title and version anchor."""
+    url = item.wiki_url or ""
+    if "/w/" not in url:
+        return None
+    page, _, anchor = url.split("/w/", 1)[1].partition("#")
+    page = unquote(page).replace("_", " ").strip()
+    anchor = unquote(anchor).replace("_", " ").strip()
+    return (page, anchor or None) if page else None
+
+
+def load_drop_version_items(items: Iterable) -> Dict[str, int]:
+    """Resolve only reviewed bare drop names to the source's declared version.
+
+    A bare drop name is the item's page title. For the few ambiguous pages in
+    ``REVIEWED_DROP_VERSIONS``, the source's version label selects the variant;
+    every other versioned item keeps the existing explicit-name behaviour.
+
+    :param items: Item database entries.
+    :return: Wiki page title -> reviewed dropped-variant item ID.
+    """
+    reviewed = {}
+    for item in items:
+        if item.duplicate or item.noted or item.placeholder or item.stacked:
+            continue
+        page_version = _item_page_and_version(item)
+        if not page_version:
+            continue
+        page, version = page_version
+        if version and REVIEWED_DROP_VERSIONS.get(page) == version:
+            reviewed[page] = item.id
+    return reviewed
+
+
+def load_unique_template_wikitext(
+    names: Iterable[str], refresh: bool = False
+) -> Dict[str, str]:
+    """Load cached ``{{Uniques/<name>}}`` template wikitext, fetching missing ones.
+
+    :param names: Invocation names used by the current monster pages.
+    :param refresh: Re-fetch the templates even when cached copies exist.
+    :return: Invocation name -> template wikitext.
+    """
+    config.DATA_DROPS_PATH.mkdir(parents=True, exist_ok=True)
+    cache_file = Path(
+        config.DATA_DROPS_PATH / "unique-templates-wiki-page-text.json"
+    )
+
+    cached = {}
+    if cache_file.exists() and not refresh:
+        with open(cache_file) as template_file:
+            cached = json.load(template_file)
+
+    templates = {}
+    for name in sorted(names):
+        page_title = f"Template:Uniques/{name}"
+        text = cached.get(page_title)
+        if text and text != "None":
+            templates[name] = text
+            continue
+        logger.info("Fetching '%s' wiki page for a unique drop template...", page_title)
+        page = WikiPageText(WIKI_API_URL, page_title)
+        page.extract_page_wiki_text()
+        if not page.wiki_text:
+            raise SystemExit(
+                f">>> ERROR: Could not fetch required unique template: {page_title}"
+            )
+        page.export_wiki_text_to_json(str(cache_file))
+        templates[name] = page.wiki_text
+    return templates
+
+
 def load_shared_table_wikitext(refresh: bool = False) -> Dict[str, Optional[str]]:
     """Load the wikitext of every shared drop table page, fetching any not cached.
 
@@ -137,18 +221,31 @@ def load_shared_table_wikitext(refresh: bool = False) -> Dict[str, Optional[str]
 
 
 def generate(
-    out_dir: Path, limit: Optional[int] = None, refresh_shared: bool = False
+    out_dir: Path,
+    limit: Optional[int] = None,
+    refresh_shared: bool = False,
+    refresh_unique: bool = False,
 ) -> None:
     """Parse every monster wiki page and write the drops dump.
 
     :param out_dir: Directory to write the dump files to.
     :param limit: Stop after this many wiki pages (for quick test runs).
     :param refresh_shared: Re-fetch the shared drop table wiki pages.
+    :param refresh_unique: Re-fetch the unique drop templates.
     """
     logger.info("Loading item database for drop item ID lookup...")
-    items = ItemIdLookup(items_api.load())
+    item_db = items_api.load()
+    items = ItemIdLookup(item_db, load_drop_version_items(item_db))
     npc_names = load_npc_cache_names()
     all_wikitext = load_monster_wikitext()
+    unique_names = {
+        name
+        for page_wikitext in all_wikitext.values()
+        for name in unique_template_titles(page_wikitext)
+    }
+    unique_templates = load_unique_template_wikitext(
+        unique_names, refresh=refresh_unique
+    )
 
     aggregator = NpcDropsAggregator(npc_names=npc_names)
     scanned_pages = 0
@@ -174,7 +271,9 @@ def generate(
             skipped_pages += 1
             continue
 
-        tables = parse_all_drop_tables(page_wikitext)
+        tables = parse_all_drop_tables(
+            page_wikitext, unique_templates=unique_templates
+        )
         if not tables:
             skipped_pages += 1
             continue
@@ -228,11 +327,21 @@ def main():
         action="store_true",
         help="Re-fetch the shared drop table wiki pages instead of using cached copies.",
     )
+    parser.add_argument(
+        "--refresh-unique",
+        action="store_true",
+        help="Re-fetch the unique drop templates instead of using cached copies.",
+    )
     args = parser.parse_args()
 
     begin_run("scripts_drops_update")
     logger.info("Starting npc drops extraction...")
-    generate(out_dir=args.out, limit=args.limit, refresh_shared=args.refresh_shared)
+    generate(
+        out_dir=args.out,
+        limit=args.limit,
+        refresh_shared=args.refresh_shared,
+        refresh_unique=args.refresh_unique,
+    )
     logger.info("Npc drops extraction completed!")
 
 

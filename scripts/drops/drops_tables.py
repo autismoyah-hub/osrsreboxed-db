@@ -155,12 +155,29 @@ class ResolvedEntry:
     bundle_ref: str = ""
     bundle_eligibility: List[str] = field(default_factory=list)
     bonus_drops: List["ResolvedEntry"] = field(default_factory=list)
+    # A conditional sub-table: one access roll, then one weighted item.
+    group_key: str = ""
+    group_access_numerator: int = 0
+    group_access_denominator: int = 0
+    group_weight_numerator: int = 0
+    group_weight_denominator: int = 0
 
 
 @dataclass
 class SeparateRoll:
     """Main-table drops rolled on their own denominator rather than the table pool."""
 
+    subsection: str
+    access_numerator: int
+    access_denominator: int
+    entries: List[ResolvedEntry]
+
+
+@dataclass
+class ConditionalGroup:
+    """One access roll; on a hit, exactly one item chosen by the group's weights."""
+
+    key: str
     subsection: str
     access_numerator: int
     access_denominator: int
@@ -180,6 +197,7 @@ class DropTableSpec:
     guaranteed: List[ResolvedEntry] = field(default_factory=list)
     pre_roll: List[ResolvedEntry] = field(default_factory=list)
     pre_roll_separate: List[SeparateRoll] = field(default_factory=list)
+    conditional_groups: List[ConditionalGroup] = field(default_factory=list)
     main: List[ResolvedEntry] = field(default_factory=list)
     main_max_roll: Optional[int] = None
     separate_rolls: List[SeparateRoll] = field(default_factory=list)
@@ -197,6 +215,7 @@ class DropTableSpec:
             or self.main
             or self.pre_roll
             or self.pre_roll_separate
+            or self.conditional_groups
             or self.separate_rolls
             or self.subtable_accesses
             or self.tertiary
@@ -212,14 +231,21 @@ class DropTableSpec:
 class ItemIdLookup:
     """Resolves wiki drop names to item IDs using the project's item database."""
 
-    def __init__(self, items):
+    def __init__(self, items, drop_version_items: Optional[Dict[str, int]] = None):
         """
         :param items: Iterable of osrsreboxed item objects.
+        :param drop_version_items: Wiki page title -> the version the item page's
+            Drop sources section identifies as dropped. Used only when a drop
+            names the base page of a versioned item without an explicit variant.
         """
         # Wiki names are checked first: several items share a plain name
         # ("Coins" is 617, 995, 6964 and 8890) but their wiki names do not.
         self.by_wiki_name: Dict[str, int] = {}
         self.by_name: Dict[str, int] = {}
+        self.drop_version_items: Dict[str, int] = {
+            self._normalize(page): item_id
+            for page, item_id in (drop_version_items or {}).items()
+        }
         # Where several items share a name, prefer the one players actually
         # trade ("Ensouled abyssal head (Item)" over "… (Drop)"), then the
         # lowest ID, which is the first of a numbered family such as the 138
@@ -250,7 +276,14 @@ class ItemIdLookup:
         :return: The item ID, or None when nothing matches.
         """
         for candidate in self._candidates(self._normalize(wiki_name)):
-            item_id = self.by_wiki_name.get(candidate, self.by_name.get(candidate))
+            # An explicit wiki name always wins. A bare page title of a
+            # versioned item then resolves to the source's dropped version,
+            # before the plain-name fallback can pick a differently named one.
+            item_id = self.by_wiki_name.get(candidate)
+            if item_id is None:
+                item_id = self.drop_version_items.get(candidate)
+            if item_id is None:
+                item_id = self.by_name.get(candidate)
             if item_id is not None:
                 return item_id
         self.unresolved[wiki_name] = self.unresolved.get(wiki_name, 0) + 1
@@ -385,6 +418,11 @@ def _resolve_entry(drop: ParsedDrop, items: ItemIdLookup) -> Optional[ResolvedEn
         quantity_condition=drop.quantity_condition,
         bundle_ref=drop.bundle_ref,
         bundle_eligibility=list(drop.bundle_eligibility),
+        group_key=drop.group_key,
+        group_access_numerator=drop.group_access_numerator,
+        group_access_denominator=drop.group_access_denominator,
+        group_weight_numerator=drop.group_weight_numerator,
+        group_weight_denominator=drop.group_weight_denominator,
     )
 
     if drop.section == SECTION_GUARANTEED:
@@ -505,6 +543,66 @@ def _finalize_main_rolls(
                 )
 
     return by_denominator[primary], primary, separate_rolls
+
+
+def _build_conditional_groups(
+    main: List[ResolvedEntry],
+) -> Tuple[List[ResolvedEntry], List[ConditionalGroup]]:
+    """Split weighted-access groups out of the main table.
+
+    The group's DropLine rates are the effective rates; its exported weight/out_of
+    become the conditional weights, and the access chance lives beside them.
+    """
+    grouped: Dict[Tuple[str, int, int], List[ResolvedEntry]] = {}
+    remaining = []
+    for entry in main:
+        if (
+            entry.group_access_denominator > 0
+            and entry.group_access_numerator > 0
+            and entry.group_weight_numerator > 0
+            and entry.group_weight_denominator > 0
+        ):
+            key = (
+                entry.group_key,
+                entry.group_access_numerator,
+                entry.group_access_denominator,
+            )
+            grouped.setdefault(key, []).append(entry)
+        else:
+            remaining.append(entry)
+
+    groups = []
+    for (key, access_numerator, access_denominator), entries in grouped.items():
+        denominator = 1
+        for entry in entries:
+            a, b = denominator, entry.group_weight_denominator
+            denominator = a * b // gcd(a, b)
+        normalized = []
+        for entry in entries:
+            weight = entry.group_weight_numerator * (
+                denominator // entry.group_weight_denominator
+            )
+            normalized.append(
+                replace(
+                    entry,
+                    group_weight_numerator=weight,
+                    group_weight_denominator=denominator,
+                )
+            )
+        if sum(entry.group_weight_numerator for entry in normalized) != denominator:
+            raise ValueError(
+                f"Conditional group {key} weights do not fill their denominator"
+            )
+        groups.append(
+            ConditionalGroup(
+                key=key,
+                subsection=normalized[0].subsection or key,
+                access_numerator=access_numerator,
+                access_denominator=access_denominator,
+                entries=normalized,
+            )
+        )
+    return remaining, groups
 
 
 def stacked_assumed_rolls(separate_rolls: List[SeparateRoll]) -> List[SeparateRoll]:
@@ -671,13 +769,16 @@ def build_table_spec(
             table.reward_policy, tertiary, _entry_json
         )
 
+    standard_main, conditional_groups = _build_conditional_groups(main)
+
     pre_roll_drops = []
-    standard_main = []
-    for entry in main:
+    standard_main_filtered = []
+    for entry in standard_main:
         if entry.subsection.lower() == PRE_ROLL_SUBSECTION.lower():
             pre_roll_drops.append(entry)
         else:
-            standard_main.append(entry)
+            standard_main_filtered.append(entry)
+    standard_main = standard_main_filtered
 
     pre_roll, _, pre_roll_separate = _finalize_main_rolls(pre_roll_drops, [])
     accesses = table.subtable_accesses
@@ -731,6 +832,7 @@ def build_table_spec(
         guaranteed=guaranteed,
         pre_roll=pre_roll,
         pre_roll_separate=pre_roll_separate,
+        conditional_groups=conditional_groups,
         main=main_entries,
         main_max_roll=main_max_roll,
         rolls=table.rolls,
@@ -888,6 +990,26 @@ def _pre_roll_json(entry: ResolvedEntry, separate: bool = False) -> Optional[Dic
     return _entry_json(entry, out_of=out_of, pre_roll=True, separate=separate)
 
 
+def _conditional_entry_json(
+    entry: ResolvedEntry, out_of: int, group: ConditionalGroup
+) -> Optional[Dict]:
+    """A conditional-group row: group weights beside its effective source rate."""
+    row = _entry_json(
+        entry, out_of=out_of, separate=True, pre_roll=True
+    )
+    if not row:
+        return row
+    row["weight"] = entry.group_weight_numerator
+    row["out_of"] = out_of
+    row["rarity"] = _rarity(entry.weight or 1, entry.out_of or entry.roll_denominator)
+    row["group_access_weight"] = group.access_numerator
+    row["group_access_out_of"] = group.access_denominator
+    row["roll_group"] = group.key
+    row["weight_basis"] = "conditional_group"
+    row["published_rarity"] = entry.rarity_raw or None
+    return row
+
+
 def build_table_json(spec: DropTableSpec) -> Dict:
     """Shape a resolved drop table into its exported JSON form."""
     entries = []
@@ -899,6 +1021,13 @@ def build_table_json(spec: DropTableSpec) -> Dict:
         row = _pre_roll_json(entry)
         if row:
             entries.append(row)
+    for group in spec.conditional_groups:
+        for entry in group.entries:
+            row = _conditional_entry_json(
+                entry, group.entries[0].group_weight_denominator, group
+            )
+            if row:
+                entries.append(row)
     for entry in spec.main:
         row = _entry_json(entry, out_of=entry.out_of or spec.main_max_roll)
         if row:

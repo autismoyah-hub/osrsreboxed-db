@@ -93,6 +93,13 @@ class ParsedDrop:
     bundle_ref: str = ""
     bundle_eligibility: List[str] = field(default_factory=list)
     rolls: int = 1
+    # A conditional sub-table: one access roll, then one weighted item from the
+    # group. Empty fields mean the row is not in such a group.
+    group_key: str = ""
+    group_access_numerator: int = 0
+    group_access_denominator: int = 0
+    group_weight_numerator: int = 0
+    group_weight_denominator: int = 0
 
 
 @dataclass
@@ -1498,11 +1505,61 @@ def _parse_drop_line(
     )
 
 
+CONDITIONAL_ACCESS = re.compile(
+    r"There is a (\d+)\s*/\s*(\d+)\s+chance of hitting the (.+?) drop table\.",
+    re.I | re.S,
+)
+CONDITIONAL_WEIGHTS = re.compile(
+    r"When players hit the table,(.*?)\.", re.I | re.S
+)
+CONDITIONAL_WEIGHT_ITEM = re.compile(
+    r"(\d+)\s*/\s*(\d+)\s+chance of (?:obtaining )?(?:an? )?(.+)$",
+    re.I,
+)
+
+
+def _apply_conditional_group(
+    section_body: str, heading: str, drops: List[ParsedDrop]
+) -> None:
+    """Annotate a section's weighted table access stated in its prose.
+
+    Some canonical templates (``Uniques/Corporeal Beast``) describe one access
+    roll and then the weights of its items rather than independent drop rates.
+    The effective DropLine rates remain useful for consumers, but the mechanic
+    must stay a single weighted access, not several independent rolls.
+    """
+    access = CONDITIONAL_ACCESS.search(section_body)
+    weights_text = CONDITIONAL_WEIGHTS.search(section_body)
+    if not access or not weights_text:
+        return
+    weights = {}
+    parts = re.split(r",\s*a\s+|\s+and\s+a\s+", weights_text.group(1))
+    for part in parts:
+        match = CONDITIONAL_WEIGHT_ITEM.search(part.strip(" ."))
+        if not match:
+            continue
+        name = re.sub(r"\s+", " ", match.group(3)).strip(" .").lower()
+        weights[name] = (int(match.group(1)), int(match.group(2)))
+    if len(weights) < 2:
+        return
+    by_name = {re.sub(r"\s+", " ", drop.name).strip(" .").lower(): drop for drop in drops}
+    if not all(name in by_name for name in weights):
+        return
+    for name, (numerator, denominator) in weights.items():
+        drop = by_name[name]
+        drop.group_key = heading or "Conditional"
+        drop.group_access_numerator = int(access.group(1))
+        drop.group_access_denominator = int(access.group(2))
+        drop.group_weight_numerator = numerator
+        drop.group_weight_denominator = denominator
+
+
 def _parse_drops_from_body(
     body: str, include_rewards: bool = False
 ) -> List[ParsedDrop]:
     drops = []
     for heading, section_body in _split_drop_subsections(body):
+        section_drops = []
         section = _classify_section(heading)
         named_refs = collect_named_footnotes(section_body)
         source_refs = collect_named_drop_footnotes(section_body)
@@ -1532,7 +1589,7 @@ def _parse_drops_from_body(
                 drop.bundle_eligibility = sorted(
                     set(source_notes) - {bundle_refs.get(drop.bundle_ref, "")}
                 )
-                drops.append(drop)
+                section_drops.append(drop)
 
         if include_rewards:
             for _, params in extract_templates(section_body, "DropsLineReward"):
@@ -1578,7 +1635,7 @@ def _parse_drops_from_body(
                 note_override=params.get("noteoverride"),
                 rarity_notes=params.get("raritynotes"),
             )
-            drops.append(
+            section_drops.append(
                 ParsedDrop(
                     name=drop_name,
                     quantity="1",
@@ -1589,6 +1646,9 @@ def _parse_drops_from_body(
                     clue_scroll_box=notes.has_clue_scroll_box(),
                 )
             )
+
+        _apply_conditional_group(section_body, heading, section_drops)
+        drops.extend(section_drops)
 
     return drops
 
@@ -1805,14 +1865,62 @@ def _parse_subtable_accesses(body: str) -> List[ParsedSubtableAccess]:
 # ---------------------------------------------------------------------------
 
 
+# Monster pages sometimes keep their uniques in an include-only template instead of
+# inline DropsLine rows (Corporeal Beast, Lizardman shaman, Vyrewatch Sentinel).
+UNIQUE_TEMPLATE = re.compile(r"\{\{\s*Uniques/([^}|{}\n]+?)\s*\}\}", re.I)
+
+
+def unique_template_titles(wikitext: str) -> List[str]:
+    """Return the ``{{Uniques/<name>}}`` template names used on a page.
+
+    :param wikitext: Raw wikitext of a monster page.
+    :return: Unique invocation names, in first-seen order.
+    """
+    return list(
+        dict.fromkeys(
+            match.group(1).strip()
+            for match in UNIQUE_TEMPLATE.finditer(wikitext or "")
+        )
+    )
+
+
+def expand_unique_templates(
+    wikitext: str, templates: Optional[Dict[str, str]]
+) -> str:
+    """Replace ``{{Uniques/<name>}}`` with its cached include-only wikitext.
+
+    :param wikitext: Raw wikitext of a monster page.
+    :param templates: Invocation name to template wikitext. When omitted, the
+        page is left untouched for callers that do not use this source.
+    :return: The expanded page wikitext.
+    :raises ValueError: A template is used but missing from ``templates``.
+    """
+    if templates is None:
+        return wikitext
+
+    def replace(match: re.Match) -> str:
+        name = match.group(1).strip()
+        text = templates.get(name)
+        if text is None:
+            raise ValueError(f"Missing cached unique template: Uniques/{name}")
+        return re.sub(r"</?includeonly>", "", text).strip()
+
+    return UNIQUE_TEMPLATE.sub(replace, wikitext)
+
+
 def parse_all_drop_tables(
-    wikitext: str, include_rewards: bool = False
+    wikitext: str,
+    include_rewards: bool = False,
+    unique_templates: Optional[Dict[str, str]] = None,
 ) -> List[ParsedDropTable]:
     """Parse every drop table declared on a monster's wiki page.
 
     :param wikitext: Raw wikitext of the monster page.
+    :param unique_templates: Cached ``{{Uniques/<name>}}`` template wikitext,
+        expanded before the drop sections are read.
     :return: One :class:`ParsedDropTable` per table/variant on the page.
     """
+    wikitext = expand_unique_templates(wikitext, unique_templates)
     sections, strict_headings = _parse_drop_table_sections(wikitext)
     if not sections:
         return []
