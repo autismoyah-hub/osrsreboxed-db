@@ -3,13 +3,14 @@
 No credentials, provider access, cache, server or gameplay are involved here.
 Caller must bind this file, plan, exact wheel manifest, source and image.
 """
-import base64, hashlib, json, os, pathlib, shutil, subprocess, sys, tarfile, tempfile, urllib.request
+import hashlib, json, os, pathlib, shutil, signal, subprocess, sys, tarfile, time, urllib.request
 
 ROOT = pathlib.Path('/tmp/slug-export-qualification')
 SOURCE = 'https://codeload.github.com/autismoyah-hub/osrsreboxed-db/tar.gz/428591a413a55973e2fde1f7c479d34e64057edf'
 SOURCE_SHA = '7e43b7bc403e0942549ecfa8a6fc36f3ebe2ee67a10c233ab8cab44ccfd1f51b'
 SOURCE_BYTES = 104209168
 WHEELS_SHA = '3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d'
+TREE_SHA = '264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51'
 WIKI_SHA = 'df1d3a498eccc175f17a3a3aa0080c4123320cd21a4e4c8998911856d75238b8'
 OUT_FILES = {'docs/npc-dialogues.json','docs/npc-dialogues-minified.json','docs/event-dialogues.json','docs/npc-dialogue-index.json','docs/dialogue-types.json','docs/dialogue-manifest.json','data/dialogues/inferred-actions.txt','data/dialogues/authoring-index.json','data/dialogues/review-issues.json'}
 
@@ -39,44 +40,82 @@ def snapshot(root, exclude_outputs=False):
   if not path.is_file(): continue
   rel=path.relative_to(root).as_posix()
   if exclude_outputs and (rel in OUT_FILES or rel.startswith('docs/dialogues/')): continue
-  result[rel]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
+  result[rel]={'bytes':path.stat().st_size,'sha256':digest_file(path),'mode':'100755' if path.stat().st_mode & 0o111 else '100644'}
  return result
 
 def run(label, cmd, cwd, env):
- result=subprocess.run(cmd,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=1800,check=False)
- (ROOT/(label+'.stdout')).write_bytes(result.stdout); (ROOT/(label+'.stderr')).write_bytes(result.stderr)
- print(json.dumps({'event':'command','label':label,'argv':cmd,'exit':result.returncode,'stdoutSHA256':hashlib.sha256(result.stdout).hexdigest(),'stderrSHA256':hashlib.sha256(result.stderr).hexdigest()}),flush=True)
- if result.returncode: raise RuntimeError(label+' failed')
+ stdout=ROOT/(label+'.stdout');stderr=ROOT/(label+'.stderr');record=ROOT/(label+'.result.json')
+ started=time.monotonic(); proc=None; outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False}
+ try:
+  with stdout.open('xb') as out, stderr.open('xb') as err:
+   proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=out,stderr=err,start_new_session=True)
+   try: outcome['exit']=proc.wait(timeout=1800)
+   except subprocess.TimeoutExpired:
+    outcome['timedOut']=True
+    os.killpg(proc.pid,signal.SIGTERM)
+    try: outcome['exit']=proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+     os.killpg(proc.pid,signal.SIGKILL);outcome['exit']=proc.wait(timeout=10)
+   finally:
+    try: os.killpg(proc.pid,0)
+    except ProcessLookupError: outcome['processGroupGone']=True
+    else:
+     os.killpg(proc.pid,signal.SIGKILL)
+     for _ in range(100):
+      try: os.killpg(proc.pid,0)
+      except ProcessLookupError: outcome['processGroupGone']=True;break
+      time.sleep(0.1)
+    out.flush();os.fsync(out.fileno());err.flush();os.fsync(err.fileno())
+ finally:
+  outcome['seconds']=round(time.monotonic()-started,3)
+  for name,path in [('stdout',stdout),('stderr',stderr)]:
+   if path.exists(): outcome[name]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
+  record.write_text(json.dumps(outcome,sort_keys=True)+'\n')
+  print(json.dumps({'event':'command-result','result':outcome,'closureScope':'process group only; escaped descendants not proven absent'}),flush=True)
+ if outcome['exit']!=0 or outcome['timedOut'] or not outcome['processGroupGone']: raise RuntimeError(label+' failed or process group remains')
 
 def main():
  if sys.version_info[:2]!=(3,9) or sys.platform!='linux': raise RuntimeError('requires reviewed Python 3.9 Linux image')
  ROOT.mkdir(mode=0o700)
  wheels_raw=pathlib.Path('/case/wheels.json').read_bytes()
  if hashlib.sha256(wheels_raw).hexdigest()!=WHEELS_SHA: raise RuntimeError('wheel manifest mismatch')
+ tree_raw=pathlib.Path('/case/source-tree.json').read_bytes()
+ if hashlib.sha256(tree_raw).hexdigest()!=TREE_SHA: raise RuntimeError('source manifest mismatch')
+ expected_tree=json.loads(tree_raw)
  wheels=json.loads(wheels_raw); wheel_dir=ROOT/'wheels';wheel_dir.mkdir()
  for w in wheels: fetch(w['url'],wheel_dir/w['filename'],w['bytes'],w['sha256'])
  source_archive=ROOT/'source.tar.gz';fetch(SOURCE,source_archive,SOURCE_BYTES,SOURCE_SHA)
  base=ROOT/'base';base.mkdir()
  with tarfile.open(source_archive,'r:gz') as t:
   members=t.getmembers(); prefix='osrsreboxed-db-428591a413a55973e2fde1f7c479d34e64057edf/'
-  seen=set()
+  seen=set();total=0
   for m in members:
-   if m.name == prefix.rstrip('/') and m.isdir(): continue
-   if not m.name.startswith(prefix) or m.name in seen or any(x in ('.','..','') for x in m.name[len(prefix):].rstrip('/').split('/')) or not (m.isdir() or m.isfile()): raise RuntimeError('unexpected archive entry')
-   seen.add(m.name)
+   name=m.name.rstrip('/')
+   if name in seen: raise RuntimeError('duplicate normalized member')
+   seen.add(name)
+   if name==prefix.rstrip('/') and m.isdir(): continue
+   if not m.name.startswith(prefix) or any(x in ('.','..','') for x in m.name[len(prefix):].rstrip('/').split('/')) or not (m.isdir() or m.isfile()) or m.size<0 or m.size>150000000: raise RuntimeError('unexpected archive entry')
+   total+=m.size
+   if total>2000000000: raise RuntimeError('archive uncompressed bound')
   t.extractall(base,members=members)
- extracted=base/prefix.rstrip('/'); source=json.loads((extracted/'data/dialogues/quest-pages.json').read_text())['Transcript:The Slug Menace']
+ extracted=base/prefix.rstrip('/')
+ if snapshot(extracted)!=expected_tree: raise RuntimeError('extracted source tree identity mismatch')
+ source=json.loads((extracted/'data/dialogues/quest-pages.json').read_text())['Transcript:The Slug Menace']
  if source['revision']!=15395854 or hashlib.sha256(source['wikitext'].encode()).hexdigest()!=WIKI_SHA: raise RuntimeError('wiki pin mismatch')
- deps=ROOT/'deps';deps.mkdir();env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1',PYTHONHASHSEED='0',PIP_DISABLE_PIP_VERSION_CHECK='1',PIP_NO_INDEX='1')
+ deps=ROOT/'deps';deps.mkdir();env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(ROOT),'TMPDIR':str(ROOT),'LANG':'C.UTF-8','PYTHONDONTWRITEBYTECODE':'1','PYTHONHASHSEED':'0','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1','PIP_DISABLE_PIP_VERSION_CHECK':'1','PIP_NO_INDEX':'1'}
  run('install',[sys.executable,'-m','pip','install','--no-index','--no-deps','--target',str(deps)]+[str(wheel_dir/w['filename']) for w in wheels],ROOT,env)
  env['PYTHONPATH']=str(deps)
+ check="import importlib.metadata as m,json; import pytest,mwparserfromhell,requests,exceptiongroup,tomli; print(json.dumps({d.metadata['Name'].lower().replace('_','-'):d.version for d in m.distributions(path=[%r])},sort_keys=True))" % str(deps)
+ run('dependency-check',[sys.executable,'-S','-c',check],ROOT,env)
+ actual=json.loads((ROOT/'dependency-check.stdout').read_text());expected={w['package'].lower().replace('_','-'):w['version'] for w in wheels}
+ if actual!=expected: raise RuntimeError('installed wheel set differs from pin')
  one=ROOT/'one';two=ROOT/'two';shutil.copytree(extracted,one);shutil.copytree(extracted,two)
  # Seal each copy before tests/export; outputs can change only at declared paths.
  initial_one=snapshot(one,True);initial_two=snapshot(two,True)
  if initial_one!=initial_two: raise RuntimeError('initial source copies differ')
  before_data_docs={k:v for k,v in snapshot(extracted).items() if k.startswith(('data/','docs/'))}
- run('regression',[sys.executable,'-m','pytest','-q','-p','no:cacheprovider','test/test_dialogue_refresh_revision.py'],one,env)
- for name,tree in [('one',one),('two',two)]:run('export-'+name,[sys.executable,'-m','scripts.dialogues.update','--offline'],tree,env)
+ run('regression',[sys.executable,'-S','-m','pytest','-q','-p','no:cacheprovider','test/test_dialogue_refresh_revision.py'],one,env)
+ for name,tree in [('one',one),('two',two)]:run('export-'+name,[sys.executable,'-S','-m','scripts.dialogues.update','--offline'],tree,env)
  if snapshot(one,True)!=initial_one or snapshot(two,True)!=initial_two: raise RuntimeError('non-output source changed')
  first={k:v for k,v in snapshot(one).items() if k.startswith(('data/','docs/'))};second={k:v for k,v in snapshot(two).items() if k.startswith(('data/','docs/'))}
  if first!=second: raise RuntimeError('full data/docs path or hash differs')
