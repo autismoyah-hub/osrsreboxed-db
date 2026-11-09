@@ -31,9 +31,9 @@ def main():
  command_bytes=a.commands.read_bytes()
  if sha(command_bytes)!=a.commands_sha256:raise RuntimeError('command plan identity')
  commands=parse(command_bytes)
- if set(commands)!=set(LABELS):raise RuntimeError('command plan labels')
+ if set(commands)!=set(LABELS)|{'frame'}:raise RuntimeError('command plan labels')
  raw_identity=file_sha(a.raw)
- a.output.mkdir(mode=0o700);start=end=None;chunks={};raw_bytes=decoded=0
+ a.output.mkdir(mode=0o700);start=end=frame_result=relay=None;chunks={};raw_bytes=decoded=frame_bytes=0;frame_hash=hashlib.sha256()
  with a.raw.open('rb') as f:
   while True:
    raw=f.readline(MAX_LINE+1)
@@ -46,6 +46,14 @@ def main():
     continue
    if not isinstance(row,dict):continue
    event=row.get('event')
+   if event=='command-result' and isinstance(row.get('result'),dict) and row['result'].get('label')=='frame':
+    if frame_result is not None or start is not None:raise RuntimeError('duplicate or late frame result')
+    frame_result=row['result']
+   elif event=='frame-relay-complete':
+    if end is None or relay is not None:raise RuntimeError('relay order')
+    relay=row
+   if isinstance(event,str) and event in ('slug-output-start','slug-output-chunk','slug-output-end'):
+    frame_hash.update(raw);frame_bytes+=len(raw)
    if event=='slug-output-start':
     if start is not None or end is not None or row.get('version')!=1:raise RuntimeError('duplicate or invalid start')
     size=row.get('bytes');count=row.get('chunks');member_count=row.get('members');digest=row.get('sha256')
@@ -67,7 +75,10 @@ def main():
     end=row
    elif isinstance(event,str) and event.startswith('slug-output-'):raise RuntimeError('unknown frame event')
  if file_sha(a.raw)!=raw_identity:raise RuntimeError('raw changed during read')
- if not start or not end:raise RuntimeError('incomplete stream')
+ if not start or not end or not frame_result or not relay:raise RuntimeError('incomplete stream')
+ if frame_result.get('argv')!=commands['frame'] or frame_result.get('status')!='COMPLETE' or frame_result.get('exit')!=0 or frame_result.get('timedOut') is not False or frame_result.get('processGroupGone') is not True or frame_result.get('unexpectedLeftoverGroup') is not False or frame_result.get('forcedCleanup') is not False or frame_result.get('signal') is not None or frame_result.get('errors')!=[]:raise RuntimeError('frame producer incomplete')
+ if frame_result.get('stderr',{}).get('bytes')!=0 or frame_result.get('stderr',{}).get('sha256')!=sha(b''):raise RuntimeError('frame producer stderr')
+ if frame_result.get('stdout',{}).get('sha256')!=frame_hash.hexdigest() or frame_result.get('stdout',{}).get('bytes')!=frame_bytes or relay.get('sha256')!=frame_hash.hexdigest() or relay.get('bytes')!=frame_bytes:raise RuntimeError('frame producer identity mismatch')
  if set(chunks)!=set(range(start['chunks'])) or any(end.get(k)!=start.get(k) for k in ('chunks','bytes','sha256')):raise RuntimeError('end or frame mismatch')
  data=b''.join(chunks[i] for i in range(start['chunks']))
  if len(data)!=start['bytes'] or sha(data)!=start['sha256']:raise RuntimeError('archive identity')

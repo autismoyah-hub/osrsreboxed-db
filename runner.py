@@ -11,7 +11,8 @@ SOURCE_SHA = '7e43b7bc403e0942549ecfa8a6fc36f3ebe2ee67a10c233ab8cab44ccfd1f51b'
 SOURCE_BYTES = 104209168
 WHEELS_SHA = '3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d'
 TREE_SHA = '264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51'
-COMMANDS_SHA = '121d801987026cbb4e9fab12f5441143baa8eca732924a3f0a211981e1418b0c'
+COMMANDS_SHA = '750e6f574e275002d345ebba8f127c931baf9eb9fc2e944f61d90ac20efdbf7d'
+FRAME_SHA = 'fb3726a93596bec86de6e20c601072ec193a4d6e6016d4dd62a931601ea30198'
 COMMANDS = {}
 WIKI_SHA = 'df1d3a498eccc175f17a3a3aa0080c4123320cd21a4e4c8998911856d75238b8'
 COMMAND_TIMEOUT_SECONDS = 1800
@@ -159,8 +160,18 @@ def main():
  for name,manifest in [('before',before_data_docs),('first',first),('second',second)]:
   (ROOT/(name+'-data-docs-manifest.json')).write_text(json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n')
  print(json.dumps({'event':'comparison-summary','changedFiles':len(report['changed']),'comparisonSHA256':digest_file(ROOT/'comparison.json')}),flush=True)
- # A draft only: production selection remains held until independent review of
- # transport, collector limits, complete reassembly and actual provider behavior.
- raise RuntimeError('OUTPUT_RETENTION_NOT_REVIEWED')
+ # Default remains held. The explicit flag is source draft only and must not be
+ # selected until case-specific provider/collector and transport review.
+ if sys.argv[1:]!=['--emit-reviewed-output']:raise RuntimeError('OUTPUT_RETENTION_NOT_REVIEWED')
+ if digest_file(pathlib.Path('/case/output-frames.py'))!=FRAME_SHA:raise RuntimeError('frame source mismatch')
+ run('frame',[sys.executable,'-S','/case/output-frames.py'],ROOT,env)
+ frame=ROOT/'frame.stdout';before=digest_file(frame)
+ with frame.open('rb') as f:
+  while True:
+   block=f.read(1048576)
+   if not block:break
+   sys.stdout.buffer.write(block);sys.stdout.buffer.flush()
+ if digest_file(frame)!=before:raise RuntimeError('frame stream changed while relaying')
+ print(json.dumps({'event':'frame-relay-complete','sha256':before,'bytes':frame.stat().st_size,'scope':'producer relay only; requires formal provider terminal and sole collector'}),flush=True)
 
 if __name__=='__main__':main()

@@ -19,6 +19,11 @@
     "scripts.dialogues.update",
     "--offline"
   ],
+  "frame": [
+    "/usr/local/bin/python3.9",
+    "-S",
+    "/case/output-frames.py"
+  ],
   "install": [
     "/usr/local/bin/python3.9",
     "-m",
