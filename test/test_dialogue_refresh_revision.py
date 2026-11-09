@@ -58,6 +58,7 @@ def test_refreshed_slug_source_retains_refusal_and_positive_variants():
     assert variants["the-pages-using-swamp-paste-on-the-pages"][0]["text"] == "[player name], stop!"
     assert "the-shrine-pushing-the-wall" in variants
     assert "the-pages-talking-to-col-o-niall-after-learning-about-mother-mallum" in variants
+    assert "the-pages-opening-hobb-s-desk" in variants
 
 
 def test_speaker_colon_outside_bold_keeps_overhead_presentation():
