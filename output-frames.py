@@ -12,6 +12,16 @@ FILES=('docs/npc-dialogues.json','docs/npc-dialogues-minified.json','docs/event-
 LOGS=tuple(label+'.'+ext for label in ('install','dependency-check','regression','export-one','export-two') for ext in ('stdout','stderr','result.json'))
 MAX_ARCHIVE=32*1024*1024
 CHUNK=3072
+MAX_MEMBERS=150000
+MAX_INPUT=1024*1024*1024
+
+class CappedWriter:
+ def __init__(self,raw):self.raw=raw;self.size=0
+ def write(self,data):
+  self.size+=len(data)
+  if self.size>MAX_ARCHIVE:raise RuntimeError('compressed archive limit')
+  return self.raw.write(data)
+ def flush(self):return self.raw.flush()
 
 def sha(data):return hashlib.sha256(data).hexdigest()
 def main():
@@ -33,9 +43,10 @@ def main():
   files.append(('evidence/'+name,p))
  names=[x for x,_ in files]
  if len(set(names))!=len(names):raise RuntimeError('duplicate archive name')
+ if len(files)>MAX_MEMBERS or sum(p.stat().st_size for _,p in files)>MAX_INPUT:raise RuntimeError('input count or size bound')
  path=ROOT/'qualified-output.tar.gz'
  with path.open('xb') as raw:
-  with gzip.GzipFile(fileobj=raw,mode='wb',mtime=0,filename='') as gz:
+  with gzip.GzipFile(fileobj=CappedWriter(raw),mode='wb',mtime=0,filename='') as gz:
    with tarfile.open(fileobj=gz,mode='w|') as tar:
     for name,p in sorted(files):
      info=tarfile.TarInfo(name);info.size=p.stat().st_size;info.mode=0o644;info.mtime=0;info.uid=info.gid=0;info.uname=info.gname=''
