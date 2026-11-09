@@ -7,7 +7,12 @@ with tempfile.TemporaryDirectory(prefix='slug-bucket-snapshot-controls-') as tmp
  (src/'one.txt').write_bytes(b'synthetic');(src/'nested').mkdir();(src/'nested/two.txt').write_bytes(b'only')
  def row(name):
   b=(src/name).read_bytes();return {'path':name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}
- manifest=root/'manifest.json';manifest.write_text(json.dumps([row('nested/two.txt'),row('one.txt')]))
+ manifest=root/'manifest.json';rows=[row('nested/two.txt'),row('one.txt')];manifest.write_text(json.dumps(rows))
+ assert m.expected_rows(manifest)==rows
+ unsorted=root/'unsorted.json';unsorted.write_text(json.dumps(list(reversed(rows))))
+ try:m.expected_rows(unsorted)
+ except RuntimeError as exc:assert str(exc)=='SDK_MANIFEST_ORDER'
+ else:raise AssertionError('unsorted manifest accepted')
  dest,site=m.build(manifest)
  try:m.verify(site,manifest)
  finally:shutil.rmtree(dest)
@@ -49,4 +54,4 @@ with tempfile.TemporaryDirectory(prefix='slug-bucket-snapshot-controls-') as tmp
  finally:
   m.scan=old_scan;m.shutil.rmtree=old_remove
   if retained is not None:old_remove(retained)
-print('PASS: synthetic snapshot match, size, symlink, FIFO race, mutation and retained cleanup failure')
+print('PASS: synthetic snapshot order, match, size, symlink, FIFO race, mutation and retained cleanup failure')
