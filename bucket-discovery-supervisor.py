@@ -3,12 +3,22 @@
 No provider authority is supplied. Any incomplete process or absent receipt is
 UNKNOWN and must not trigger automatic rerun or snapshot deletion.
 """
-import argparse,hashlib,json,os,pathlib,re,resource,signal,subprocess,sys,time
+import argparse,base64,hashlib,json,os,pathlib,re,resource,signal,subprocess,sys,time
 HERE=pathlib.Path(__file__).resolve().parent
 CALLER_SHA='8ac96a88da8d4fbd57bfe7c2149e2f7de73acf873f700d3a9d21f6712028017b'
 INTERPRETER='/usr/bin/python3.12'
 INTERPRETER_SHA='c2c20b4745d447551221ec3d4e70f92c270c4609fe3df34fc52ea6dd46e92273'
 SNAPROOT=pathlib.Path('/tmp/slug-bucket-snapshots')
+CHILD_BOOTSTRAP="""import base64,hashlib,sys,types
+raw=base64.b64decode(sys.argv.pop(1),validate=True)
+expected=sys.argv.pop(1);filename=sys.argv.pop(1)
+if hashlib.sha256(raw).hexdigest()!=expected:raise SystemExit(1)
+sys.argv[0]=filename
+module=types.ModuleType('__main__')
+module.__dict__.update(__file__=filename,__name__='__main__',__package__='',__spec__=None,__cached__=None)
+sys.modules['__main__']=module
+exec(compile(raw,filename,'exec'),module.__dict__)
+"""
 LIMIT=1024*1024
 CHILD_FILE_LIMIT=32*1024*1024
 
@@ -30,7 +40,7 @@ def main():
  if not __debug__ or not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode:raise RuntimeError('isolated interpreter required')
  if str(pathlib.Path(sys.executable).resolve())!=INTERPRETER or sha(pathlib.Path(sys.executable).read_bytes())!=INTERPRETER_SHA:raise RuntimeError('interpreter identity')
  if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise RuntimeError('pidfd unavailable')
- caller=HERE/'bucket-discovery-caller.py';checked(caller,CALLER_SHA,1024*1024);plan=json.loads(checked(a.plan,a.plan_sha256,1024*1024));checked(a.sdk_manifest,a.sdk_manifest_sha256,4*1024*1024)
+ caller=HERE/'bucket-discovery-caller.py';caller_snapshot=checked(caller,CALLER_SHA,1024*1024);plan=json.loads(checked(a.plan,a.plan_sha256,1024*1024));checked(a.sdk_manifest,a.sdk_manifest_sha256,4*1024*1024)
  if plan.get('sdkManifestSHA256')!=a.sdk_manifest_sha256:raise RuntimeError('plan manifest mismatch')
  private_dir(SNAPROOT);home=HERE/'supervisor-runs';private_dir(home)
  if a.output.parent.resolve()!=home.resolve() or a.output.name in ('','.','..'):raise RuntimeError('output outside private root')
@@ -39,10 +49,10 @@ def main():
  root.mkdir(mode=0o700);fd=os.open(str(home),os.O_RDONLY|os.O_DIRECTORY)
  try:os.fsync(fd)
  finally:os.close(fd)
- before=sorted(x.name for x in SNAPROOT.iterdir());result={'status':'UNKNOWN','planSHA256':a.plan_sha256,'sdkManifestSHA256':a.sdk_manifest_sha256,'callerSHA256':CALLER_SHA,'pid':None,'exit':None,'timedOut':False,'processGroupGone':None,'snapshotsBefore':before,'errors':[],'scope':'whole caller process group only; escaped descendants and transient mutation unproven'}
+ before=sorted(x.name for x in SNAPROOT.iterdir());result={'status':'UNKNOWN','planSHA256':a.plan_sha256,'sdkManifestSHA256':a.sdk_manifest_sha256,'callerSHA256':CALLER_SHA,'pid':None,'exit':None,'timedOut':False,'processGroupGone':None,'snapshotsBefore':before,'nestedAuthAction':'POSSIBLY_ACTIVE_UNTIL_INDEPENDENT_RECONCILIATION','snapshotInventoryScope':'point-in-time names only; nested child may create later','errors':[],'scope':'outer caller process group only; nested auth child uses another session, escaped descendants and transient mutation unproven'}
  proc=None;pidfd=None;started=time.monotonic()
  try:
-  cmd=[INTERPRETER,'-I','-S','-B',str(caller),'--plan',str(a.plan.resolve()),'--plan-sha256',a.plan_sha256,'--sdk-manifest',str(a.sdk_manifest.resolve()),'--output',str(a.caller_output)]
+  cmd=[INTERPRETER,'-I','-S','-B','-c',CHILD_BOOTSTRAP,base64.b64encode(caller_snapshot).decode('ascii'),CALLER_SHA,str(caller),'--plan',str(a.plan.resolve()),'--plan-sha256',a.plan_sha256,'--sdk-manifest',str(a.sdk_manifest.resolve()),'--output',str(a.caller_output)]
   def limit():resource.setrlimit(resource.RLIMIT_FSIZE,(CHILD_FILE_LIMIT,CHILD_FILE_LIMIT))
   with (root/'stdout.private').open('xb') as out,(root/'stderr.private').open('xb') as err:
    proc=subprocess.Popen(cmd,stdout=out,stderr=err,start_new_session=True,preexec_fn=limit);result['pid']=proc.pid;pidfd=os.pidfd_open(proc.pid,0)
@@ -53,6 +63,8 @@ def main():
     except ProcessLookupError:result['leaderPidfdKill']=False
     result['exit']=proc.wait(timeout=10)
    finally:out.flush();os.fsync(out.fileno());err.flush();os.fsync(err.fileno())
+  checked(caller,CALLER_SHA,1024*1024);checked(a.plan,a.plan_sha256,1024*1024);checked(a.sdk_manifest,a.sdk_manifest_sha256,4*1024*1024)
+  result['sourcePrePost']='MATCH'
   if result['exit']==0 and not result['timedOut']:result['status']='CALLER_EXITED_ZERO_AWAIT_RECEIPT_REVIEW'
  except BaseException as exc:result['errors'].append(type(exc).__name__);result['status']='UNKNOWN'
  finally:
