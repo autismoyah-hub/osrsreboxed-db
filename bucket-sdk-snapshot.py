@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,os,shutil,stat,tempfile
 SOURCE=Path('/tmp/slug-hf-sdk/site-packages')
+SNAPROOT=Path('/tmp/slug-bucket-snapshots')
 MAX_FILE=32*1024*1024
 MAX_TOTAL=512*1024*1024
 MAX_FILES=10000
@@ -22,6 +23,16 @@ def expected_rows(manifest_path):
  if [x['path'] for x in rows]!=sorted(seen):raise RuntimeError('SDK_MANIFEST_ORDER')
  return rows
 
+def open_regular(path,observed):
+ flags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK
+ fd=os.open(str(path),flags)
+ try:
+  actual=os.fstat(fd)
+  if not stat.S_ISREG(actual.st_mode) or (actual.st_dev,actual.st_ino,actual.st_size)!=(observed.st_dev,observed.st_ino,observed.st_size):raise RuntimeError('SDK_SOURCE_CHANGED')
+  return os.fdopen(fd,'rb')
+ except BaseException:
+  os.close(fd);raise
+
 def scan(site):
  root=Path(site);actual=[];total=0;entries=0
  if root.is_symlink() or not root.is_dir():raise RuntimeError('SDK_ROOT_INVALID')
@@ -35,7 +46,7 @@ def scan(site):
   total+=st.st_size
   if total>MAX_TOTAL or len(actual)>=MAX_FILES:raise RuntimeError('SDK_SIZE_BOUND')
   h=hashlib.sha256();count=0
-  with p.open('rb') as f:
+  with open_regular(p,st) as f:
    while True:
     chunk=f.read(1048576)
     if not chunk:break
@@ -52,13 +63,16 @@ def verify(site,manifest_path):
 def build(manifest_path):
  expected=expected_rows(manifest_path)
  if scan(SOURCE)!=expected:raise RuntimeError('SDK_SOURCE_MISMATCH')
- dest=Path(tempfile.mkdtemp(prefix='slug-bucket-sdk-',dir='/tmp'))
+ if SNAPROOT.is_symlink() or not SNAPROOT.is_dir() or SNAPROOT.stat().st_uid!=os.geteuid() or SNAPROOT.stat().st_mode&0o077:raise RuntimeError('private owned snapshot root required')
+ dest=Path(tempfile.mkdtemp(prefix='slug-bucket-sdk-',dir=str(SNAPROOT)))
  try:
   site=dest/'site';site.mkdir(mode=0o700)
   for row in expected:
    source=SOURCE/row['path'];target=site/row['path'];target.parent.mkdir(parents=True,exist_ok=True)
    h=hashlib.sha256();count=0
-   with source.open('rb') as src,target.open('xb') as out:
+   observed=source.lstat()
+   if not stat.S_ISREG(observed.st_mode) or observed.st_size!=row['bytes']:raise RuntimeError('SDK_SOURCE_CHANGED')
+   with open_regular(source,observed) as src,target.open('xb') as out:
     while True:
      chunk=src.read(1048576)
      if not chunk:break

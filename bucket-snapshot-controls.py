@@ -1,9 +1,9 @@
 """UNRUN fake-only SDK snapshot controls; no SDK, secret, network or provider."""
-import hashlib,importlib.util,json,pathlib,shutil,tempfile
+import hashlib,importlib.util,json,os,pathlib,shutil,tempfile
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('bucket_snapshot',HERE/'bucket-sdk-snapshot.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 with tempfile.TemporaryDirectory(prefix='slug-bucket-snapshot-controls-') as tmp:
- root=pathlib.Path(tmp);src=root/'source';src.mkdir();m.SOURCE=src
+ root=pathlib.Path(tmp);src=root/'source';src.mkdir();m.SOURCE=src;m.SNAPROOT=root/'snapshots';m.SNAPROOT.mkdir(mode=0o700)
  (src/'one.txt').write_bytes(b'synthetic');(src/'nested').mkdir();(src/'nested/two.txt').write_bytes(b'only')
  def row(name):
   b=(src/name).read_bytes();return {'path':name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}
@@ -23,6 +23,12 @@ with tempfile.TemporaryDirectory(prefix='slug-bucket-snapshot-controls-') as tmp
   except RuntimeError:pass
   else:raise AssertionError('symlink accepted')
  finally:(src/'link').unlink()
+ original_stat=(src/'one.txt').lstat();(src/'one.txt').rename(src/'saved.txt');os.mkfifo(src/'one.txt')
+ try:
+  try:m.open_regular(src/'one.txt',original_stat)
+  except RuntimeError:pass
+  else:raise AssertionError('FIFO replacement accepted')
+ finally:(src/'one.txt').unlink();(src/'saved.txt').rename(src/'one.txt')
  (src/'one.txt').write_bytes(b'changed')
  try:
   try:m.build(manifest)
@@ -43,4 +49,4 @@ with tempfile.TemporaryDirectory(prefix='slug-bucket-snapshot-controls-') as tmp
  finally:
   m.scan=old_scan;m.shutil.rmtree=old_remove
   if retained is not None:old_remove(retained)
-print('PASS: synthetic snapshot match, size, symlink, mutation and retained cleanup failure')
+print('PASS: synthetic snapshot match, size, symlink, FIFO race, mutation and retained cleanup failure')

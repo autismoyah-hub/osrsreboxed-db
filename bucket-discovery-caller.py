@@ -11,7 +11,7 @@ OWNER='4e81ba8a-625e-4909-8635-5bc9ca91cd77'
 FILES={'adapter':('hf-bucket-readonly-proposal.py','f23d68b0e8f12abc5bb3e7a3da7b7fa253a81e1c089bee19ca65fd3dda239469'),
        'entry':('bucket-list-proposal.py','996a5d714e0311a0ae9fa09262abe16d845640d7fd6a9e3bedebc8708984b230'),
        'authChild':('authenticated-child-snapshot-command.py','00ff45d75be1eae3bc8f04995cfb8bcbe2bc5adc28c1162b843cfe88c87024f9'),
-       'snapshot':('bucket-sdk-snapshot.py','b0fc2ffecab2df18526dc4e87e6dfda5dd2d0a0d3dde52a23a4b42a91683f26f')}
+       'snapshot':('bucket-sdk-snapshot.py','8256d1e5cfa5d7f82ac6049c6889e64497c2b9566cfc44a0dae915b74e4afe77')}
 LIMIT=1024*1024
 MANIFEST_LIMIT=4*1024*1024
 
