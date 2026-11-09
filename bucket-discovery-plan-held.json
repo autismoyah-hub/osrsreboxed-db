@@ -1,0 +1,9 @@
+{
+  "owner": "4e81ba8a-625e-4909-8635-5bc9ca91cd77",
+  "action": "READ_ONLY_BUCKET_LIST",
+  "sdkVersion": "2.4.0",
+  "sdkManifestSHA256": null,
+  "executionHold": "SDK_NOT_PREPARED_AND_PLAN_NOT_REVIEWED",
+  "maxResults": 100,
+  "timeoutSeconds": 120
+}
