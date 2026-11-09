@@ -1,0 +1,98 @@
+[
+  {
+    "package": "mwparserfromhell",
+    "version": "0.6.3",
+    "filename": "mwparserfromhell-0.6.3-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/5a/47/ce0136dbcb53f396fd5f658278e5a22a8e2cbc8f1eb9d6fca64823e4eeac/mwparserfromhell-0.6.3-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
+    "bytes": 177742,
+    "sha256": "842c37e4b9abf76115ea4a590087d08460f6787cdc4d814236fc4b53e1307950"
+  },
+  {
+    "package": "pytest",
+    "version": "8.3.5",
+    "filename": "pytest-8.3.5-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/30/3d/64ad57c803f1fa1e963a7946b6e0fea4a70df53c1a7fed304586539c2bac/pytest-8.3.5-py3-none-any.whl",
+    "bytes": 343634,
+    "sha256": "c69214aa47deac29fad6c2a4f590b9c4a9fdb16a403176fe154b79c0b4d4d820"
+  },
+  {
+    "package": "requests",
+    "version": "2.26.0",
+    "filename": "requests-2.26.0-py2.py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/92/96/144f70b972a9c0eabbd4391ef93ccd49d0f2747f4f6a2a2738e99e5adc65/requests-2.26.0-py2.py3-none-any.whl",
+    "bytes": 62251,
+    "sha256": "6c1246513ecd5ecd4528a0906f910e8f0f9c6b8ec72030dc9fd154dc1a6efd24"
+  },
+  {
+    "package": "iniconfig",
+    "version": "2.0.0",
+    "filename": "iniconfig-2.0.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/ef/a6/62565a6e1cf69e10f5727360368e451d4b7f58beeac6173dc9db836a5b46/iniconfig-2.0.0-py3-none-any.whl",
+    "bytes": 5892,
+    "sha256": "b6a85871a79d2e3b22d2d1b94ac2824226a63c6b741c88f7ae975f18b6778374"
+  },
+  {
+    "package": "packaging",
+    "version": "24.2",
+    "filename": "packaging-24.2-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/88/ef/eb23f262cca3c0c4eb7ab1933c3b1f03d021f2c48f54763065b6f0e321be/packaging-24.2-py3-none-any.whl",
+    "bytes": 65451,
+    "sha256": "09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759"
+  },
+  {
+    "package": "pluggy",
+    "version": "1.5.0",
+    "filename": "pluggy-1.5.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/88/5f/e351af9a41f866ac3f1fac4ca0613908d9a41741cfcf2228f4ad853b697d/pluggy-1.5.0-py3-none-any.whl",
+    "bytes": 20556,
+    "sha256": "44e1ad92c8ca002de6377e165f3e0f1be63266ab4d554740532335b9d75ea669"
+  },
+  {
+    "package": "certifi",
+    "version": "2025.1.31",
+    "filename": "certifi-2025.1.31-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/38/fc/bce832fd4fd99766c04d1ee0eead6b0ec6486fb100ae5e74c1d91292b982/certifi-2025.1.31-py3-none-any.whl",
+    "bytes": 166393,
+    "sha256": "ca78db4565a652026a4db2bcdf68f2fb589ea80d0be70e03929ed730746b84fe"
+  },
+  {
+    "package": "charset-normalizer",
+    "version": "2.0.12",
+    "filename": "charset_normalizer-2.0.12-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/06/b3/24afc8868eba069a7f03650ac750a778862dc34941a4bebeb58706715726/charset_normalizer-2.0.12-py3-none-any.whl",
+    "bytes": 39623,
+    "sha256": "6881edbebdb17b39b4eaaa821b438bf6eddffb4468cf344f09f89def34a8b1df"
+  },
+  {
+    "package": "idna",
+    "version": "3.10",
+    "filename": "idna-3.10-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl",
+    "bytes": 70442,
+    "sha256": "946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3"
+  },
+  {
+    "package": "urllib3",
+    "version": "1.26.20",
+    "filename": "urllib3-1.26.20-py2.py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/33/cf/8435d5a7159e2a9c83a95896ed596f68cf798005fe107cc655b5c5c14704/urllib3-1.26.20-py2.py3-none-any.whl",
+    "bytes": 144225,
+    "sha256": "0ed14ccfbf1c30a9072c7ca157e4319b70d65f623e91e7b32fadb2853431016e"
+  },
+  {
+    "package": "tomli",
+    "version": "2.0.1",
+    "filename": "tomli-2.0.1-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/97/75/10a9ebee3fd790d20926a90a2547f0bf78f371b2f13aa822c759680ca7b9/tomli-2.0.1-py3-none-any.whl",
+    "bytes": 12757,
+    "sha256": "939de3e7a6161af0c887ef91b7d41a53e7c5a1ca976325f429cb46ea9bc30ecc"
+  },
+  {
+    "package": "exceptiongroup",
+    "version": "1.2.2",
+    "filename": "exceptiongroup-1.2.2-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/02/cc/b7e31358aac6ed1ef2bb790a9746ac2c69bcb3c8588b41616914eb106eaf/exceptiongroup-1.2.2-py3-none-any.whl",
+    "bytes": 16453,
+    "sha256": "3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b"
+  }
+]
