@@ -159,8 +159,15 @@ def parse_step(raw, issues, line):
         return node
     speech = re.fullmatch(r"'''(.*?)'''\s*(.*)", raw, re.S)
     speaker = speaker_label(speech[1]) if speech else None
+    # Wiki transcripts also put the speaker's colon just outside bold markup.
+    if (speech and speaker is None and speech[2].startswith(":")
+            and any(char.isalnum() for char in clean(speech[1]))):
+        speaker = speaker_label(speech[1] + ":")
+        speech_text = speech[2][1:].lstrip()
+    else:
+        speech_text = speech[2] if speech else ""
     if speaker is not None:
-        text = clean(speech[2])
+        text = clean(speech_text)
         node = dict(type="line", speaker=speaker, text=text)
         if "{{overhead" in raw.lower():
             node["display"] = "overhead"
