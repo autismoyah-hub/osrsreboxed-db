@@ -3,7 +3,7 @@
 No credentials, provider access, cache, server or gameplay are involved here.
 Caller must bind this file, plan, exact wheel manifest, source and image.
 """
-import contextlib, hashlib, json, os, pathlib, shutil, signal, subprocess, sys, tarfile, time, urllib.request
+import base64, contextlib, gzip, hashlib, json, os, pathlib, shutil, signal, subprocess, sys, tarfile, time, urllib.request
 
 ROOT = pathlib.Path('/tmp/slug-export-qualification')
 SOURCE = 'https://codeload.github.com/autismoyah-hub/osrsreboxed-db/tar.gz/428591a413a55973e2fde1f7c479d34e64057edf'
@@ -149,8 +149,10 @@ def main():
  if first!=second: raise RuntimeError('full data/docs path or hash differs')
  report={'event':'export-comparison','source':'428591a413a55973e2fde1f7c479d34e64057edf','dataDocsFiles':len(first),'changed':{k:{'before':before_data_docs.get(k),'after':first.get(k)} for k in sorted(before_data_docs.keys()|first.keys()) if before_data_docs.get(k)!=first.get(k)},'dataDocsEqual':True,'nonOutputSourceEqual':True}
  (ROOT/'comparison.json').write_text(json.dumps(report,sort_keys=True)+'\n')
+ (ROOT/'data-docs-manifest.json').write_text(json.dumps(first,sort_keys=True,separators=(',',':'))+'\n')
  print(json.dumps({'event':'comparison-summary','changedFiles':len(report['changed']),'comparisonSHA256':digest_file(ROOT/'comparison.json')}),flush=True)
- # Output retention intentionally unresolved. No claim of complete collected output.
+ # A draft only: production selection remains held until independent review of
+ # transport, collector limits, complete reassembly and actual provider behavior.
  raise RuntimeError('OUTPUT_RETENTION_NOT_REVIEWED')
 
 if __name__=='__main__':main()
