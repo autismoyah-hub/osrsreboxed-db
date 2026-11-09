@@ -44,6 +44,9 @@ def main():
         print(json.dumps({'request': request, 'plan': plan}, indent=2))
         return
 
+    if args.collect:
+        raise RuntimeError('COLLECTION_INTEGRATION_HELD_NO_PROVIDER_CALL')
+
     from huggingface_hub import HfApi
     api = HfApi()
     identity = api.whoami()['name']  # Fails before submission if no account is connected.
@@ -87,24 +90,6 @@ def main():
         print(json.dumps({'stage': 'SUBMITTED', 'namespace': identity, 'jobId': info.id}))
         return
 
-    receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
-    if receipt['namespace'] != identity:
-        raise RuntimeError('Connected account differs from submission owner')
-    if 'job' not in receipt:
-        raise RuntimeError('Ambiguous submission: inspect owned Jobs by source/name before reconciliation; do not resubmit')
-    job_id = receipt['job']['id']
-    info = api.inspect_job(job_id=job_id, namespace=identity)
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-    save(here / f'status-{stamp}.json', dataclasses.asdict(info))
-    chunks = 0
-    with (here / f'logs-{stamp}.txt').open('x', encoding='utf-8') as stream:
-        for chunk in api.fetch_job_logs(job_id=job_id, namespace=identity, follow=False):
-            stream.write(chunk + '\n'); stream.flush(); os.fsync(stream.fileno()); chunks += 1
-    with (here / f'logs-{stamp}.complete.json').open('x', encoding='utf-8') as stream:
-        json.dump({'fetchIterationComplete': True, 'chunks': chunks, 'jobId': job_id, 'limit': 'not proof of terminal or complete provider logs'}, stream)
-    print(json.dumps({'jobId': job_id, 'status': dataclasses.asdict(info.status),
-                      'artifacts': str(here), 'scope': plan['scope'],
-                      'framedOutputComplete': None}, default=str))
 
 
 if __name__ == '__main__':

@@ -10,8 +10,8 @@
       "sha256": "49a09da1015de2802313ed11c2c03358675b2580140f4203d83ecc6280bdcce7"
     },
     "hf-pilot.py": {
-      "bytes": 5715,
-      "sha256": "d697c71f016f0c87c65f16cf15b56f6e38935f92850ac220fad950ae9ff7e924"
+      "bytes": 4504,
+      "sha256": "0de84e3b3c71ad880de9e1843b57c63e17e0cc3e33337efecd9110bb98969974"
     },
     "output-frames.py": {
       "bytes": 4657,
@@ -37,6 +37,18 @@
       "bytes": 11696,
       "sha256": "b4ca3792357dfb0b951806d3e18508f88bc300aa470872b96b09479f5628bc97"
     },
+    "sdk-contract.txt": {
+      "bytes": 578,
+      "sha256": "955c724ebd1a3eb0216990ee825010779ede431da09ababf5600714878bd6505"
+    },
+    "sdk-records-controls.py": {
+      "bytes": 1977,
+      "sha256": "da543cacfdc16c3f137df10e2d23e5fd6363815328dc1df98f86e1db399bcb7e"
+    },
+    "sdk-records.py": {
+      "bytes": 2905,
+      "sha256": "3020fbb268bb7a5e986a1116a89abdecc0c455557c46c430bab03605a2fb5d15"
+    },
     "source-tree.json": {
       "bytes": 7811710,
       "sha256": "264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51"
@@ -61,7 +73,8 @@
     "fresh exclusive local intent and single collector",
     "provider terminal and raw contiguous frame retention",
     "actual image/wheel execution and full output reassembly",
-    "network isolation and transient mutation not proven"
+    "network isolation and transient mutation not proven",
+    "SDK event strings preserve records but producer byte/newline reconstruction contract and collection integration unresolved"
   ],
   "image": "python@sha256:70fbdeb75b0d071778ea1df4353ac959118ae8031bc5be33a95d1b8ea1fb8f08",
   "inputRefCommit": "b994cad2b39539293c3a31ec9bfba4c8df4a46e5",

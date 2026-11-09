@@ -1,0 +1,8 @@
+Read-only PyPI source inspection, huggingface_hub 2.4.0 wheel:
+huggingface_hub-2.4.0-py3-none-any.whl, 857021 bytes,
+SHA256 42ecfd93ede47bdd333daebbf66a32d7bfe2e18752754fe4d2d4f98a0179d801.
+huggingface_hub/hf_api.py fetch_job_logs documents Iterable[str], obtains event
+records via _fetch_running_job_sse and yields event['data'] (except job-start
+messages). The inspected code does not establish that strings preserve original
+producer newline or byte/chunk boundaries, or that a non-follow iteration is a
+complete terminal log. This is source reading only; no provider query.
