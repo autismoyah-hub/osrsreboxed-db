@@ -3,7 +3,7 @@
 No credentials, provider access, cache, server or gameplay are involved here.
 Caller must bind this file, plan, exact wheel manifest, source and image.
 """
-import hashlib, json, os, pathlib, shutil, signal, subprocess, sys, tarfile, time, urllib.request
+import contextlib, hashlib, json, os, pathlib, shutil, signal, subprocess, sys, tarfile, time, urllib.request
 
 ROOT = pathlib.Path('/tmp/slug-export-qualification')
 SOURCE = 'https://codeload.github.com/autismoyah-hub/osrsreboxed-db/tar.gz/428591a413a55973e2fde1f7c479d34e64057edf'
@@ -46,10 +46,12 @@ def snapshot(root, exclude_outputs=False):
 
 def run(label, cmd, cwd, env):
  stdout=ROOT/(label+'.stdout');stderr=ROOT/(label+'.stderr');record=ROOT/(label+'.result.json')
- started=time.monotonic();proc=None
- outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False,'status':'UNKNOWN','errors':[]}
+ started=time.monotonic();proc=None;created=set()
+ outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False,'unexpectedLeftoverGroup':False,'forcedCleanup':False,'status':'UNKNOWN','errors':[]}
  try:
-  with stdout.open('xb') as out, stderr.open('xb') as err:
+  with contextlib.ExitStack() as stack:
+   out=stack.enter_context(stdout.open('xb'));created.add('stdout')
+   err=stack.enter_context(stderr.open('xb'));created.add('stderr')
    try:
     proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=out,stderr=err,start_new_session=True)
     try: outcome['exit']=proc.wait(timeout=1800)
@@ -70,6 +72,7 @@ def run(label, cmd, cwd, env):
       try: os.killpg(proc.pid,0)
       except ProcessLookupError: outcome['processGroupGone']=True
       else:
+       outcome['unexpectedLeftoverGroup']=True;outcome['forcedCleanup']=True
        try: os.killpg(proc.pid,signal.SIGKILL)
        except ProcessLookupError: pass
        for _ in range(100):
@@ -86,9 +89,10 @@ def run(label, cmd, cwd, env):
   if isinstance(outcome['exit'],int) and outcome['exit']<0: outcome['signal']=-outcome['exit']
   for name,path in [('stdout',stdout),('stderr',stderr)]:
    try:
-    if path.exists(): outcome[name]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
+    if name in created: outcome[name]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
+    elif path.exists(): outcome[name]={'status':'PREEXISTING_COLLISION_NOT_CAPTURED'}
    except BaseException as exc: outcome['errors'].append(name+' hash: '+type(exc).__name__+': '+str(exc))
-  if not outcome['errors'] and outcome['exit']==0 and not outcome['timedOut'] and outcome['processGroupGone']: outcome['status']='COMPLETE'
+  if not outcome['errors'] and outcome['exit']==0 and not outcome['timedOut'] and outcome['processGroupGone'] and not outcome['unexpectedLeftoverGroup']: outcome['status']='COMPLETE'
   with record.open('x') as f:
    json.dump(outcome,f,sort_keys=True);f.write('\n');f.flush();os.fsync(f.fileno())
   fd=os.open(str(ROOT),os.O_RDONLY|os.O_DIRECTORY)
