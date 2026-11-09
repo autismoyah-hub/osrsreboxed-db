@@ -22,7 +22,7 @@
   "frame": [
     "/usr/local/bin/python3.9",
     "-S",
-    "/case/output-frames.py"
+    "/tmp/slug-case/output-frames.py"
   ],
   "install": [
     "/usr/local/bin/python3.9",

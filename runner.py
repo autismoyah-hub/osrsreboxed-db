@@ -11,7 +11,7 @@ SOURCE_SHA = '7e43b7bc403e0942549ecfa8a6fc36f3ebe2ee67a10c233ab8cab44ccfd1f51b'
 SOURCE_BYTES = 104209168
 WHEELS_SHA = '3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d'
 TREE_SHA = '264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51'
-COMMANDS_SHA = '750e6f574e275002d345ebba8f127c931baf9eb9fc2e944f61d90ac20efdbf7d'
+COMMANDS_SHA = '4e9e717a1f56f5ec9f88f7a826eb15e1a3fec3730f85175030b1d628b4b36292'
 FRAME_SHA = 'fb3726a93596bec86de6e20c601072ec193a4d6e6016d4dd62a931601ea30198'
 COMMANDS = {}
 WIKI_SHA = 'df1d3a498eccc175f17a3a3aa0080c4123320cd21a4e4c8998911856d75238b8'
@@ -110,12 +110,12 @@ def main():
  global COMMANDS
  if sys.executable!='/usr/local/bin/python3.9' or sys.version_info[:2]!=(3,9) or sys.platform!='linux': raise RuntimeError('requires reviewed Python 3.9 Linux image')
  ROOT.mkdir(mode=0o700)
- command_raw=pathlib.Path('/case/commands.json').read_bytes()
+ command_raw=pathlib.Path('/tmp/slug-case/commands.json').read_bytes()
  if hashlib.sha256(command_raw).hexdigest()!=COMMANDS_SHA: raise RuntimeError('command plan mismatch')
  COMMANDS=json.loads(command_raw)
- wheels_raw=pathlib.Path('/case/wheels.json').read_bytes()
+ wheels_raw=pathlib.Path('/tmp/slug-case/wheels.json').read_bytes()
  if hashlib.sha256(wheels_raw).hexdigest()!=WHEELS_SHA: raise RuntimeError('wheel manifest mismatch')
- tree_raw=pathlib.Path('/case/source-tree.json').read_bytes()
+ tree_raw=pathlib.Path('/tmp/slug-case/source-tree.json').read_bytes()
  if hashlib.sha256(tree_raw).hexdigest()!=TREE_SHA: raise RuntimeError('source manifest mismatch')
  expected_tree=json.loads(tree_raw)
  wheels=json.loads(wheels_raw); wheel_dir=ROOT/'wheels';wheel_dir.mkdir()
@@ -163,8 +163,8 @@ def main():
  # Default remains held. The explicit flag is source draft only and must not be
  # selected until case-specific provider/collector and transport review.
  if sys.argv[1:]!=['--emit-reviewed-output']:raise RuntimeError('OUTPUT_RETENTION_NOT_REVIEWED')
- if digest_file(pathlib.Path('/case/output-frames.py'))!=FRAME_SHA:raise RuntimeError('frame source mismatch')
- run('frame',[sys.executable,'-S','/case/output-frames.py'],ROOT,env)
+ if digest_file(pathlib.Path('/tmp/slug-case/output-frames.py'))!=FRAME_SHA:raise RuntimeError('frame source mismatch')
+ run('frame',[sys.executable,'-S','/tmp/slug-case/output-frames.py'],ROOT,env)
  frame=ROOT/'frame.stdout';before=digest_file(frame)
  with frame.open('rb') as f:
   while True:
