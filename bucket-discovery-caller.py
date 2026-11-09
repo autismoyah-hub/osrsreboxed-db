@@ -11,7 +11,7 @@ OWNER='4e81ba8a-625e-4909-8635-5bc9ca91cd77'
 FILES={'adapter':('hf-bucket-readonly-proposal.py','f23d68b0e8f12abc5bb3e7a3da7b7fa253a81e1c089bee19ca65fd3dda239469'),
        'entry':('bucket-list-proposal.py','996a5d714e0311a0ae9fa09262abe16d845640d7fd6a9e3bedebc8708984b230'),
        'authChild':('authenticated-child-snapshot-command.py','00ff45d75be1eae3bc8f04995cfb8bcbe2bc5adc28c1162b843cfe88c87024f9'),
-       'snapshot':('bucket-sdk-snapshot.py','435a62f3e42ad4fa4380cb26316210d7d52d98f4d47e68c2574c8665b70ef912')}
+       'snapshot':('bucket-sdk-snapshot.py','b0fc2ffecab2df18526dc4e87e6dfda5dd2d0a0d3dde52a23a4b42a91683f26f')}
 LIMIT=1024*1024
 MANIFEST_LIMIT=4*1024*1024
 
@@ -44,6 +44,7 @@ def group_gone(pid):
 def main():
  p=argparse.ArgumentParser();p.add_argument('--plan',type=pathlib.Path,required=True);p.add_argument('--plan-sha256',required=True);p.add_argument('--sdk-manifest',type=pathlib.Path,required=True);p.add_argument('--output',type=pathlib.Path,required=True);a=p.parse_args()
  if not __debug__ or not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode:raise RuntimeError('isolated interpreter required')
+ if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise RuntimeError('pidfd unavailable')
  if str(pathlib.Path(sys.executable).resolve())!=INTERPRETER or sha(pathlib.Path(sys.executable).read_bytes())!=INTERPRETER_SHA:raise RuntimeError('interpreter mismatch')
  plan=json.loads(bound(a.plan.resolve(strict=True),a.plan_sha256));expected={'owner','action','sdkVersion','sdkManifestSHA256','executionHold','maxResults','timeoutSeconds'}
  if set(plan)!=expected or plan['owner']!=OWNER or plan['action']!='READ_ONLY_BUCKET_LIST' or plan['sdkVersion']!='2.4.0' or plan['executionHold'] or plan['maxResults']!=100 or plan['timeoutSeconds']!=120:raise RuntimeError('unselected or mismatched plan')
@@ -59,7 +60,7 @@ def main():
  try:os.fsync(fd)
  finally:os.close(fd)
  receipt={'status':'UNKNOWN','planSHA256':a.plan_sha256,'owner':OWNER,'exit':None,'timedOut':False,'processGroupGone':None,'pid':None,'snapshotDisposition':'NOT_CREATED','errors':[],'sdkManifestSHA256':plan['sdkManifestSHA256'],'scope':'SDK-returned namespace metadata only; no permissions, persistence, global census or escaped-descendant proof'}
- started=time.monotonic();sdkroot=None;proc=None;sdk=None;site=None
+ started=time.monotonic();sdkroot=None;proc=None;pidfd=None;sdk=None;site=None
  try:
   sdk=load(HERE/FILES['snapshot'][0],FILES['snapshot'][1]);child=load(HERE/FILES['authChild'][0],FILES['authChild'][1]);sdkroot,site=sdk.build(manifest);receipt['snapshotDisposition']='PRESERVED_PENDING_CLOSURE';receipt['snapshotPath']=str(sdkroot);sdk.verify(site,manifest)
   metadata=list(site.glob('huggingface_hub-2.4.0.dist-info/METADATA'))
@@ -70,11 +71,12 @@ def main():
   def limit():resource.setrlimit(resource.RLIMIT_FSIZE,(LIMIT,LIMIT))
   with (root/'stdout.private').open('xb') as out,(root/'stderr.private').open('xb') as err:
    proc=subprocess.Popen(cmd,stdout=out,stderr=err,start_new_session=True,preexec_fn=limit);receipt['pid']=proc.pid
+   pidfd=os.pidfd_open(proc.pid,0)
    try:receipt['exit']=proc.wait(timeout=120)
    except subprocess.TimeoutExpired:
     receipt['timedOut']=True
-    try:os.killpg(proc.pid,signal.SIGKILL)
-    except ProcessLookupError:pass
+    try:signal.pidfd_send_signal(pidfd,signal.SIGKILL);receipt['leaderPidfdKill']=True
+    except ProcessLookupError:receipt['leaderPidfdKill']=False
     receipt['exit']=proc.wait(timeout=10)
    finally:
     out.flush();os.fsync(out.fileno());err.flush();os.fsync(err.fileno())
@@ -85,19 +87,22 @@ def main():
   if receipt['exit']!=0 or receipt['timedOut'] or data.get('status')!='LIST_ITERATION_RETURNED' or data.get('namespace')!='Autismo-Yah' or type(data.get('count')) is not int or data['count']!=len(data.get('ids',[])) or data['count']>100:raise RuntimeError('incomplete discovery')
   receipt['status']='ITERATION_RETURNED_METADATA_ONLY';receipt['count']=data['count']
  except BaseException as exc:
+  if hasattr(exc,'snapshotPath'):
+   receipt['snapshotPath']=exc.snapshotPath;receipt['snapshotDisposition']='PRESERVED_BUILD_FAILURE'
   receipt['errors'].append(type(exc).__name__);receipt['status']='UNKNOWN'
  finally:
   if proc is not None:
    try:
     if not group_gone(proc.pid):
-     receipt['errors'].append('LEFTOVER_GROUP');receipt['status']='UNKNOWN'
-     try:os.killpg(proc.pid,signal.SIGKILL)
-     except ProcessLookupError:pass
+     receipt['errors'].append('LEFTOVER_GROUP_NOT_SIGNALLED');receipt['status']='UNKNOWN'
     deadline=time.monotonic()+5
     while time.monotonic()<deadline and not group_gone(proc.pid):time.sleep(0.05)
     receipt['processGroupGone']=group_gone(proc.pid)
    except BaseException as exc:receipt['errors'].append('group closure '+type(exc).__name__);receipt['status']='UNKNOWN'
   else:receipt['processGroupGone']=True
+  if pidfd is not None:
+   try:os.close(pidfd)
+   except BaseException as exc:receipt['errors'].append('pidfd close '+type(exc).__name__);receipt['status']='UNKNOWN'
   if sdkroot is not None and receipt['processGroupGone'] is True:
    try:shutil.rmtree(sdkroot);receipt['snapshotDisposition']='REMOVED_AFTER_GROUP_CLOSURE'
    except BaseException as exc:receipt['errors'].append('snapshot cleanup '+type(exc).__name__);receipt['status']='UNKNOWN'
