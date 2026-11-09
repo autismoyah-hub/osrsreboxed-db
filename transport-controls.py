@@ -54,10 +54,35 @@ def main():
   extract_fails(tampered,sha(archive.read_bytes()),receipt,sha(receipt.read_bytes()),root/'tampered-output')
   extract_fails(archive,sha(archive.read_bytes()),receipt,'0'*64,root/'tampered-receipt')
   extract_fails(archive,sha(archive.read_bytes()),receipt,sha(receipt.read_bytes()),root/'extracted')
-  frame.MAX_ARCHIVE=1;(root/'qualified-output.tar.gz').unlink()
+  badindex=list(lines);row=json.loads(badindex[1]);row['index']=999999;badindex[1]=json.dumps(row)+'\n';path=root/'bad-index.log';path.write_text(''.join(badindex));restore(path,root/'bad-index',False)
+  path=root/'duplicate-json.log';path.write_text(lines[0]+'{"event":"slug-output-chunk","event":"duplicate"}\n'+''.join(lines[1:]));restore(path,root/'duplicate-json',False)
+  path=root/'oversized-line.log';path.write_bytes(b'x'*(reassemble.MAX_LINE+1)+b'\n');restore(path,root/'oversized-line',False)
+  # Reframe synthetic evidence after forcing an invalid command outcome.
+  result_path=root/'regression.result.json';good_result=result_path.read_bytes();bad_result=json.loads(good_result);bad_result['forcedCleanup']=True;result_path.write_text(json.dumps(bad_result));(root/'qualified-output.tar.gz').unlink()
+  buf=io.StringIO()
+  with contextlib.redirect_stdout(buf):frame.main()
+  path=root/'forced-cleanup.log';path.write_text(buf.getvalue());restore(path,root/'forced-cleanup',False);result_path.write_bytes(good_result)
+  # A divergent second manifest must not be accepted as reproducible output.
+  second=root/'second-data-docs-manifest.json';good_second=second.read_bytes();second.write_text('{}');(root/'qualified-output.tar.gz').unlink()
+  buf=io.StringIO()
+  with contextlib.redirect_stdout(buf):frame.main()
+  path=root/'changed-map.log';path.write_text(buf.getvalue());restore(path,root/'changed-map',False);second.write_bytes(good_second)
+  # Sealed input corruption must be refused by the emitter before framing.
+  original=shard.read_bytes();shard.write_bytes(b'corrupt');(root/'qualified-output.tar.gz').unlink()
+  try:
+   with contextlib.redirect_stdout(io.StringIO()):frame.main()
+  except Exception:pass
+  else:raise AssertionError('corrupt sealed output accepted')
+  shard.write_bytes(original)
+  # Simulated fsync failure must not report successful extraction.
+  original_fsync=extract.os.fsync;extract.os.fsync=lambda fd: (_ for _ in ()).throw(OSError('synthetic fsync failure'))
+  try:extract_fails(archive,sha(archive.read_bytes()),receipt,sha(receipt.read_bytes()),root/'fsync-failure')
+  finally:extract.os.fsync=original_fsync
+  (root/'qualified-output.tar.gz').unlink(missing_ok=True)
+  frame.MAX_ARCHIVE=1
   try:
    with contextlib.redirect_stdout(io.StringIO()):frame.main()
   except RuntimeError:pass
   else:raise AssertionError('compressed size cap accepted')
- print('PASS: synthetic roundtrip, partial, duplicate, unknown frame, argv mismatch, tamper, collision and compressed cap')
+ print('PASS: synthetic roundtrip, frame/bounds, argv/cleanup, manifest/output tamper, extraction collision/fsync and compressed cap')
 if __name__=='__main__':main()

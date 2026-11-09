@@ -11,6 +11,8 @@ SOURCE_SHA = '7e43b7bc403e0942549ecfa8a6fc36f3ebe2ee67a10c233ab8cab44ccfd1f51b'
 SOURCE_BYTES = 104209168
 WHEELS_SHA = '3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d'
 TREE_SHA = '264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51'
+COMMANDS_SHA = '121d801987026cbb4e9fab12f5441143baa8eca732924a3f0a211981e1418b0c'
+COMMANDS = {}
 WIKI_SHA = 'df1d3a498eccc175f17a3a3aa0080c4123320cd21a4e4c8998911856d75238b8'
 COMMAND_TIMEOUT_SECONDS = 1800
 OUT_FILES = {'docs/npc-dialogues.json','docs/npc-dialogues-minified.json','docs/event-dialogues.json','docs/npc-dialogue-index.json','docs/dialogue-types.json','docs/dialogue-manifest.json','data/dialogues/inferred-actions.txt','data/dialogues/authoring-index.json','data/dialogues/review-issues.json'}
@@ -46,6 +48,7 @@ def snapshot(root, exclude_outputs=False):
  return result
 
 def run(label, cmd, cwd, env):
+ if COMMANDS.get(label)!=cmd: raise RuntimeError('unreviewed command')
  stdout=ROOT/(label+'.stdout');stderr=ROOT/(label+'.stderr');record=ROOT/(label+'.result.json')
  started=time.monotonic();proc=None;created=set()
  outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False,'unexpectedLeftoverGroup':False,'forcedCleanup':False,'status':'UNKNOWN','errors':[]}
@@ -103,8 +106,12 @@ def run(label, cmd, cwd, env):
  if outcome['status']!='COMPLETE': raise RuntimeError(label+' incomplete; no retry')
 
 def main():
- if sys.version_info[:2]!=(3,9) or sys.platform!='linux': raise RuntimeError('requires reviewed Python 3.9 Linux image')
+ global COMMANDS
+ if sys.executable!='/usr/local/bin/python3.9' or sys.version_info[:2]!=(3,9) or sys.platform!='linux': raise RuntimeError('requires reviewed Python 3.9 Linux image')
  ROOT.mkdir(mode=0o700)
+ command_raw=pathlib.Path('/case/commands.json').read_bytes()
+ if hashlib.sha256(command_raw).hexdigest()!=COMMANDS_SHA: raise RuntimeError('command plan mismatch')
+ COMMANDS=json.loads(command_raw)
  wheels_raw=pathlib.Path('/case/wheels.json').read_bytes()
  if hashlib.sha256(wheels_raw).hexdigest()!=WHEELS_SHA: raise RuntimeError('wheel manifest mismatch')
  tree_raw=pathlib.Path('/case/source-tree.json').read_bytes()

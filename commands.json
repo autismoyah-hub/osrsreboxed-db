@@ -1,0 +1,54 @@
+{
+  "dependency-check": [
+    "/usr/local/bin/python3.9",
+    "-S",
+    "-c",
+    "import importlib.metadata as m,json; import pytest,mwparserfromhell,requests,exceptiongroup,tomli; print(json.dumps({d.metadata['Name'].lower().replace('_','-'):d.version for d in m.distributions(path=['/tmp/slug-export-qualification/deps'])},sort_keys=True))"
+  ],
+  "export-one": [
+    "/usr/local/bin/python3.9",
+    "-S",
+    "-m",
+    "scripts.dialogues.update",
+    "--offline"
+  ],
+  "export-two": [
+    "/usr/local/bin/python3.9",
+    "-S",
+    "-m",
+    "scripts.dialogues.update",
+    "--offline"
+  ],
+  "install": [
+    "/usr/local/bin/python3.9",
+    "-m",
+    "pip",
+    "install",
+    "--no-index",
+    "--no-deps",
+    "--target",
+    "/tmp/slug-export-qualification/deps",
+    "/tmp/slug-export-qualification/wheels/mwparserfromhell-0.6.3-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
+    "/tmp/slug-export-qualification/wheels/pytest-8.3.5-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/requests-2.26.0-py2.py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/iniconfig-2.0.0-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/packaging-24.2-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/pluggy-1.5.0-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/certifi-2025.1.31-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/charset_normalizer-2.0.12-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/idna-3.10-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/urllib3-1.26.20-py2.py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/tomli-2.0.1-py3-none-any.whl",
+    "/tmp/slug-export-qualification/wheels/exceptiongroup-1.2.2-py3-none-any.whl"
+  ],
+  "regression": [
+    "/usr/local/bin/python3.9",
+    "-S",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "test/test_dialogue_refresh_revision.py"
+  ]
+}

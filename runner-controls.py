@@ -7,6 +7,7 @@ env={'PATH':'/usr/local/bin:/usr/bin:/bin','LANG':'C.UTF-8'}
 
 def perform(label,code,expected,timeout=3):
  r.COMMAND_TIMEOUT_SECONDS=timeout
+ r.COMMANDS[label]=[sys.executable,'-c',code]
  try:r.run(label,[sys.executable,'-c',code],r.ROOT,env)
  except RuntimeError:
   if expected=='COMPLETE':raise
