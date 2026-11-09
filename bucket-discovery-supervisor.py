@@ -5,7 +5,7 @@ UNKNOWN and must not trigger automatic rerun or snapshot deletion.
 """
 import argparse,base64,hashlib,json,os,pathlib,re,resource,signal,subprocess,sys,time
 HERE=pathlib.Path(__file__).resolve().parent
-CALLER_SHA='8ac96a88da8d4fbd57bfe7c2149e2f7de73acf873f700d3a9d21f6712028017b'
+CALLER_SHA='8324ada2bd3e4753e9c198874fe0c8a6706c71c924cdad9420134ac7d721fdde'
 INTERPRETER='/usr/bin/python3.12'
 INTERPRETER_SHA='c2c20b4745d447551221ec3d4e70f92c270c4609fe3df34fc52ea6dd46e92273'
 SNAPROOT=pathlib.Path('/tmp/slug-bucket-snapshots')

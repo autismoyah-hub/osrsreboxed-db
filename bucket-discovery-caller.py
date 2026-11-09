@@ -84,7 +84,9 @@ def main():
   raw=(root/'stdout.private').read_bytes()
   if len(raw)>LIMIT or (root/'stderr.private').stat().st_size>LIMIT:raise RuntimeError('capture bound')
   data=json.loads(raw)
-  if receipt['exit']!=0 or receipt['timedOut'] or data.get('status')!='LIST_ITERATION_RETURNED' or data.get('namespace')!='Autismo-Yah' or type(data.get('count')) is not int or data['count']!=len(data.get('ids',[])) or data['count']>100:raise RuntimeError('incomplete discovery')
+  ids=data.get('ids')
+  if receipt['exit']!=0 or receipt['timedOut'] or data.get('status')!='LIST_ITERATION_RETURNED' or data.get('namespace')!='Autismo-Yah' or not isinstance(ids,list) or type(data.get('count')) is not int or data['count']!=len(ids) or len(ids)>100:raise RuntimeError('incomplete discovery')
+  if any(not isinstance(x,str) or not re.fullmatch(r'Autismo-Yah/[A-Za-z0-9][A-Za-z0-9._-]{0,95}',x) for x in ids) or len(set(ids))!=len(ids):raise RuntimeError('invalid bucket identities')
   receipt['status']='ITERATION_RETURNED_METADATA_ONLY';receipt['count']=data['count']
  except BaseException as exc:
   if hasattr(exc,'snapshotPath'):
