@@ -22,12 +22,23 @@ with tempfile.TemporaryDirectory(prefix='slug-sdk-records-') as tmp:
  old=m.MAX_TOTAL_BYTES;m.MAX_TOTAL_BYTES=2
  try:x=capture(root,'cap',['long']);assert x['status']=='UNKNOWN' and x['errorType']=='ValueError'
  finally:m.MAX_TOTAL_BYTES=old
+ old_encoded=m.MAX_ENCODED_BYTES;m.MAX_ENCODED_BYTES=8
+ try:x=capture(root,'encoded-cap',['a']);assert x['status']=='UNKNOWN' and x['errorType']=='ValueError'
+ finally:m.MAX_ENCODED_BYTES=old_encoded
  original=m.os.fsync;calls=[0]
  def fail_once(fd):
   calls[0]+=1
-  if calls[0]==1:raise OSError('synthetic disk failure')
+  if calls[0]==2:raise OSError('synthetic record fsync failure')
   return original(fd)
  m.os.fsync=fail_once
  try:x=capture(root,'disk',['partial']);assert x['status']=='UNKNOWN' and x['errorType']=='OSError'
  finally:m.os.fsync=original
-print('PASS: synthetic exact SDK string boundaries, iterator error, cap and one fsync failure')
+ calls=[0]
+ def fail_parent_once(fd):
+  calls[0]+=1
+  if calls[0]==1:raise OSError('synthetic parent fsync failure')
+  return original(fd)
+ m.os.fsync=fail_parent_once
+ try:x=capture(root,'parent',['never']);assert x['status']=='UNKNOWN' and x['errorType']=='OSError' and x['records']==0
+ finally:m.os.fsync=original
+print('PASS: synthetic SDK records, iterator error, decoded/encoded caps, record and parent fsync failure')

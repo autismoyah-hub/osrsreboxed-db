@@ -9,11 +9,15 @@ import base64,hashlib,json,os,pathlib,time
 MAX_RECORDS=200000
 MAX_RECORD_BYTES=16*1024*1024
 MAX_TOTAL_BYTES=128*1024*1024
+MAX_ENCODED_BYTES=192*1024*1024
 
 def capture_records(api,namespace,job_id,directory):
  root=pathlib.Path(directory);root.mkdir(mode=0o700)
- started=time.monotonic();count=total=0;digest=hashlib.sha256();status='UNKNOWN';error=None
+ started=time.monotonic();count=total=encoded_total=0;digest=hashlib.sha256();status='UNKNOWN';error=None
  try:
+  parent_fd=os.open(str(root.parent),os.O_RDONLY|os.O_DIRECTORY)
+  try:os.fsync(parent_fd)
+  finally:os.close(parent_fd)
   with (root/'records.jsonl').open('xb') as out:
    for value in api.fetch_job_logs(job_id=job_id,namespace=namespace,follow=False):
     if type(value) is not str:raise TypeError('SDK record is not a string')
@@ -22,7 +26,9 @@ def capture_records(api,namespace,job_id,directory):
     if len(raw)>MAX_RECORD_BYTES or count>=MAX_RECORDS or total+len(raw)>MAX_TOTAL_BYTES:raise ValueError('record bound')
     row={'index':count,'encoding':'utf-8','bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'base64':base64.b64encode(raw).decode('ascii')}
     encoded=(json.dumps(row,sort_keys=True,separators=(',',':'))+'\n').encode('ascii')
-    out.write(encoded);out.flush();os.fsync(out.fileno());digest.update(encoded);count+=1;total+=len(raw)
+    if encoded_total+len(encoded)>MAX_ENCODED_BYTES:raise ValueError('encoded record bound')
+    if out.write(encoded)!=len(encoded):raise OSError('partial record write')
+    out.flush();os.fsync(out.fileno());digest.update(encoded);count+=1;total+=len(raw);encoded_total+=len(encoded)
   status='ITERATION_RETURNED'
  except BaseException as exc:
   error=type(exc).__name__
@@ -41,7 +47,7 @@ def capture_records(api,namespace,job_id,directory):
   except BaseException:
    status='UNKNOWN';error=error or 'RecordFileReadError'
   if status=='ITERATION_RETURNED' and actual_sha!=digest.hexdigest():status='UNKNOWN';error='RecordFileMismatch'
-  receipt={'event':'sdk-record-capture','namespace':namespace,'jobId':job_id,'status':status,'errorType':error,'records':count,'utf8Bytes':total,'completedRecordWritesSHA256':digest.hexdigest(),'actualRecordFileSHA256':actual_sha,'actualRecordFileBytes':actual_bytes,'elapsedSeconds':round(time.monotonic()-started,3),'scope':'SDK-returned strings only; no producer-byte, provider completeness, terminal or custody proof'}
+  receipt={'event':'sdk-record-capture','namespace':namespace,'jobId':job_id,'status':status,'errorType':error,'records':count,'utf8Bytes':total,'completedEncodedBytes':encoded_total,'completedRecordWritesSHA256':digest.hexdigest(),'actualRecordFileSHA256':actual_sha,'actualRecordFileBytes':actual_bytes,'elapsedSeconds':round(time.monotonic()-started,3),'scope':'SDK-returned strings only; no producer-byte, provider completeness, terminal or custody proof'}
   with (root/'capture.json').open('x',encoding='utf-8') as f:
    json.dump(receipt,f,sort_keys=True);f.write('\n');f.flush();os.fsync(f.fileno())
   fd=os.open(str(root),os.O_RDONLY|os.O_DIRECTORY)
