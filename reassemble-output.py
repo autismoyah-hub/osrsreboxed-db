@@ -2,7 +2,7 @@
 import argparse,base64,hashlib,json,pathlib,re,tarfile
 MAX=32*1024*1024
 MAX_RAW=128*1024*1024
-MAX_LINE=16*1024*1024
+MAX_LINE=64*1024
 MAX_EXPANDED=1024*1024*1024
 MAX_MEMBERS=150000
 MAX_META=16*1024*1024
@@ -26,7 +26,12 @@ def unique(pairs):
  return result
 def parse(raw):return json.loads(raw,object_pairs_hook=unique)
 def main():
- p=argparse.ArgumentParser();p.add_argument('raw',type=pathlib.Path);p.add_argument('output',type=pathlib.Path);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('raw',type=pathlib.Path);p.add_argument('output',type=pathlib.Path);p.add_argument('commands',type=pathlib.Path);p.add_argument('commands_sha256');a=p.parse_args()
+ if a.raw.stat().st_size>MAX_RAW:raise RuntimeError('raw input bound')
+ command_bytes=a.commands.read_bytes()
+ if sha(command_bytes)!=a.commands_sha256:raise RuntimeError('command plan identity')
+ commands=parse(command_bytes)
+ if set(commands)!=set(LABELS):raise RuntimeError('command plan labels')
  raw_identity=file_sha(a.raw)
  a.output.mkdir(mode=0o700);start=end=None;chunks={};raw_bytes=decoded=0
  with a.raw.open('rb') as f:
@@ -75,7 +80,7 @@ def main():
    if name in members or len(members)>=MAX_MEMBERS or any(x in ('','.','..') for x in parts) or not item.isfile() or not 0<=item.size<=200000000:raise RuntimeError('unsafe tar member')
    total+=item.size
    if total>MAX_EXPANDED:raise RuntimeError('expanded size bound')
-   ismeta=name in ('evidence/data-docs-manifest.json','evidence/comparison.json') or (name.startswith('evidence/') and name.endswith('.result.json'))
+   ismeta=name in ('evidence/before-data-docs-manifest.json','evidence/first-data-docs-manifest.json','evidence/second-data-docs-manifest.json','evidence/comparison.json') or (name.startswith('evidence/') and name.endswith('.result.json'))
    if ismeta and item.size>MAX_META:raise RuntimeError('metadata size bound')
    source=tar.extractfile(item);h=hashlib.sha256();remaining=item.size;parts=[]
    while remaining:
@@ -86,9 +91,11 @@ def main():
    members[name]={'bytes':item.size,'sha256':h.hexdigest()}
    if ismeta:metadata[name]=parse(b''.join(parts))
  if len(members)!=start['members']:raise RuntimeError('member count')
- manifest=metadata['evidence/data-docs-manifest.json'];comparison=metadata['evidence/comparison.json']
+ before=metadata['evidence/before-data-docs-manifest.json'];manifest=metadata['evidence/first-data-docs-manifest.json'];second=metadata['evidence/second-data-docs-manifest.json'];comparison=metadata['evidence/comparison.json']
+ changed={k:{'before':before.get(k),'after':manifest.get(k)} for k in sorted(before.keys()|manifest.keys()) if before.get(k)!=manifest.get(k)}
+ if manifest!=second or changed!=comparison.get('changed'):raise RuntimeError('complete manifest or changed-key mismatch')
  expected_outputs={k for k in manifest if k in FILES or k.startswith('docs/dialogues/')}
- expected={'output/'+k for k in expected_outputs}|{'evidence/comparison.json','evidence/data-docs-manifest.json'}|{'evidence/'+k for k in LOGS}
+ expected={'output/'+k for k in expected_outputs}|{'evidence/comparison.json','evidence/before-data-docs-manifest.json','evidence/first-data-docs-manifest.json','evidence/second-data-docs-manifest.json'}|{'evidence/'+k for k in LOGS}
  if not FILES<=expected_outputs or set(members)!=expected:raise RuntimeError('output keyset mismatch')
  for k in expected_outputs:
   actual=members['output/'+k];want=manifest[k]
@@ -96,12 +103,12 @@ def main():
  if comparison.get('source')!='428591a413a55973e2fde1f7c479d34e64057edf' or comparison.get('dataDocsEqual') is not True or comparison.get('nonOutputSourceEqual') is not True or comparison.get('dataDocsFiles')!=len(manifest):raise RuntimeError('comparison not complete')
  for label in LABELS:
   record=metadata['evidence/'+label+'.result.json']
-  if record.get('label')!=label or record.get('status')!='COMPLETE' or record.get('exit')!=0 or record.get('timedOut') is not False or record.get('processGroupGone') is not True or record.get('unexpectedLeftoverGroup') is not False or record.get('errors')!=[]:raise RuntimeError('command incomplete '+label)
+  if record.get('label')!=label or record.get('status')!='COMPLETE' or record.get('exit')!=0 or record.get('timedOut') is not False or record.get('processGroupGone') is not True or record.get('unexpectedLeftoverGroup') is not False or record.get('forcedCleanup') is not False or record.get('signal') is not None or record.get('argv')!=commands[label] or record.get('errors')!=[]:raise RuntimeError('command incomplete '+label)
   for stream in ('stdout','stderr'):
    got=members['evidence/'+label+'.'+stream];claim=record.get(stream,{})
    if got['sha256']!=claim.get('sha256') or got['bytes']!=claim.get('bytes'):raise RuntimeError('command log mismatch '+label)
  if file_sha(path)!=sha(data):raise RuntimeError('archive changed during inspection')
- result={'status':'REASSEMBLED','rawSHA256':raw_identity,'archiveSHA256':sha(data),'archiveBytes':len(data),'members':len(members),'expandedBytes':total,'limit':'offline log reconstruction only; does not authenticate provider/custody or prove no omitted events outside this stream'}
+ result={'status':'REASSEMBLED','rawSHA256':raw_identity,'archiveSHA256':sha(data),'archiveBytes':len(data),'members':len(members),'expandedBytes':total,'commandsSHA256':a.commands_sha256,'outputFiles':{k:manifest[k] for k in sorted(expected_outputs)},'limit':'offline log reconstruction only; does not authenticate provider/custody or prove no omitted events outside this stream'}
  with (a.output/'reassembly.json').open('x') as f:json.dump(result,f,sort_keys=True);f.write('\n')
  print(json.dumps(result,sort_keys=True))
 if __name__=='__main__':main()

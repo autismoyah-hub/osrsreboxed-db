@@ -149,7 +149,8 @@ def main():
  if first!=second: raise RuntimeError('full data/docs path or hash differs')
  report={'event':'export-comparison','source':'428591a413a55973e2fde1f7c479d34e64057edf','dataDocsFiles':len(first),'changed':{k:{'before':before_data_docs.get(k),'after':first.get(k)} for k in sorted(before_data_docs.keys()|first.keys()) if before_data_docs.get(k)!=first.get(k)},'dataDocsEqual':True,'nonOutputSourceEqual':True}
  (ROOT/'comparison.json').write_text(json.dumps(report,sort_keys=True)+'\n')
- (ROOT/'data-docs-manifest.json').write_text(json.dumps(first,sort_keys=True,separators=(',',':'))+'\n')
+ for name,manifest in [('before',before_data_docs),('first',first),('second',second)]:
+  (ROOT/(name+'-data-docs-manifest.json')).write_text(json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n')
  print(json.dumps({'event':'comparison-summary','changedFiles':len(report['changed']),'comparisonSHA256':digest_file(ROOT/'comparison.json')}),flush=True)
  # A draft only: production selection remains held until independent review of
  # transport, collector limits, complete reassembly and actual provider behavior.
