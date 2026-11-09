@@ -42,10 +42,13 @@ def main():
    if len(raw)>MAX_LINE or raw_bytes>MAX_RAW:raise RuntimeError('raw input bound')
    try:row=parse(raw)
    except (ValueError,UnicodeDecodeError):
-    if b'slug-output-' in raw:raise RuntimeError('malformed frame')
+    if (start is not None and end is None) or b'slug-output-' in raw:raise RuntimeError('malformed or interleaved frame')
     continue
-   if not isinstance(row,dict):continue
+   if not isinstance(row,dict):
+    if start is not None and end is None:raise RuntimeError('interleaved nonframe')
+    continue
    event=row.get('event')
+   if start is not None and end is None and event not in ('slug-output-chunk','slug-output-end'):raise RuntimeError('interleaved frame span')
    if event=='command-result' and isinstance(row.get('result'),dict) and row['result'].get('label')=='frame':
     if frame_result is not None or start is not None:raise RuntimeError('duplicate or late frame result')
     frame_result=row['result']

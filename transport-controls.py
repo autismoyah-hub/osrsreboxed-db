@@ -60,6 +60,8 @@ def main():
   extract_fails(archive,sha(archive.read_bytes()),receipt,sha(receipt.read_bytes()),root/'extracted')
   badindex=list(lines);row=json.loads(badindex[1]);row['index']=999999;badindex[1]=json.dumps(row)+'\n';path=root/'bad-index.log';path.write_text(wrap(''.join(badindex)));restore(path,root/'bad-index',False)
   path=root/'duplicate-json.log';path.write_text(wrap(lines[0]+'{"event":"slug-output-chunk","event":"duplicate"}\n'+''.join(lines[1:])));restore(path,root/'duplicate-json',False)
+  for label,inserted in [('interleaved-json','{"event":"other"}\n'),('interleaved-malformed','not-json\n')]:
+   path=root/(label+'.log');path.write_text(wrap(lines[0]+inserted+''.join(lines[1:])));restore(path,root/label,False)
   path=root/'oversized-line.log';path.write_bytes(b'x'*(reassemble.MAX_LINE+1)+b'\n');restore(path,root/'oversized-line',False)
   # Reframe synthetic evidence after forcing an invalid command outcome.
   result_path=root/'regression.result.json';good_result=result_path.read_bytes();bad_result=json.loads(good_result);bad_result['forcedCleanup']=True;result_path.write_text(json.dumps(bad_result));(root/'qualified-output.tar.gz').unlink()
@@ -88,5 +90,5 @@ def main():
    with contextlib.redirect_stdout(io.StringIO()):frame.main()
   except RuntimeError:pass
   else:raise AssertionError('compressed size cap accepted')
- print('PASS: synthetic roundtrip, frame/bounds, argv/cleanup, manifest/output tamper, extraction collision/fsync and compressed cap')
+ print('PASS: synthetic roundtrip, frame/interleave/bounds, argv/cleanup, manifest/output tamper, extraction collision/fsync and compressed cap')
 if __name__=='__main__':main()
