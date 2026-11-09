@@ -12,6 +12,7 @@ SOURCE_BYTES = 104209168
 WHEELS_SHA = '3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d'
 TREE_SHA = '264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51'
 WIKI_SHA = 'df1d3a498eccc175f17a3a3aa0080c4123320cd21a4e4c8998911856d75238b8'
+COMMAND_TIMEOUT_SECONDS = 1800
 OUT_FILES = {'docs/npc-dialogues.json','docs/npc-dialogues-minified.json','docs/event-dialogues.json','docs/npc-dialogue-index.json','docs/dialogue-types.json','docs/dialogue-manifest.json','data/dialogues/inferred-actions.txt','data/dialogues/authoring-index.json','data/dialogues/review-issues.json'}
 
 def digest_file(path):
@@ -54,7 +55,7 @@ def run(label, cmd, cwd, env):
    err=stack.enter_context(stderr.open('xb'));created.add('stderr')
    try:
     proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=out,stderr=err,start_new_session=True)
-    try: outcome['exit']=proc.wait(timeout=1800)
+    try: outcome['exit']=proc.wait(timeout=COMMAND_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
      outcome['timedOut']=True
      try: os.killpg(proc.pid,signal.SIGTERM)
