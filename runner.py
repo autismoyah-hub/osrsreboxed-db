@@ -37,7 +37,8 @@ def snapshot(root, exclude_outputs=False):
  result={}
  for path in sorted(root.rglob('*')):
   if path.is_symlink(): raise RuntimeError('symlink in tree')
-  if not path.is_file(): continue
+  if path.is_dir(): continue
+  if not path.is_file(): raise RuntimeError('unexpected nonregular filesystem entry')
   rel=path.relative_to(root).as_posix()
   if exclude_outputs and (rel in OUT_FILES or rel.startswith('docs/dialogues/')): continue
   result[rel]={'bytes':path.stat().st_size,'sha256':digest_file(path),'mode':'100755' if path.stat().st_mode & 0o111 else '100644'}
@@ -45,34 +46,56 @@ def snapshot(root, exclude_outputs=False):
 
 def run(label, cmd, cwd, env):
  stdout=ROOT/(label+'.stdout');stderr=ROOT/(label+'.stderr');record=ROOT/(label+'.result.json')
- started=time.monotonic(); proc=None; outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False}
+ started=time.monotonic();proc=None
+ outcome={'label':label,'argv':cmd,'exit':None,'timedOut':False,'signal':None,'processGroupGone':False,'status':'UNKNOWN','errors':[]}
  try:
   with stdout.open('xb') as out, stderr.open('xb') as err:
-   proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=out,stderr=err,start_new_session=True)
-   try: outcome['exit']=proc.wait(timeout=1800)
-   except subprocess.TimeoutExpired:
-    outcome['timedOut']=True
-    os.killpg(proc.pid,signal.SIGTERM)
-    try: outcome['exit']=proc.wait(timeout=10)
+   try:
+    proc=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=out,stderr=err,start_new_session=True)
+    try: outcome['exit']=proc.wait(timeout=1800)
     except subprocess.TimeoutExpired:
-     os.killpg(proc.pid,signal.SIGKILL);outcome['exit']=proc.wait(timeout=10)
+     outcome['timedOut']=True
+     try: os.killpg(proc.pid,signal.SIGTERM)
+     except ProcessLookupError: pass
+     try: outcome['exit']=proc.wait(timeout=10)
+     except subprocess.TimeoutExpired:
+      try: os.killpg(proc.pid,signal.SIGKILL)
+      except ProcessLookupError: pass
+      outcome['exit']=proc.wait(timeout=10)
+   except BaseException as exc:
+    outcome['errors'].append(type(exc).__name__+': '+str(exc))
    finally:
-    try: os.killpg(proc.pid,0)
-    except ProcessLookupError: outcome['processGroupGone']=True
-    else:
-     os.killpg(proc.pid,signal.SIGKILL)
-     for _ in range(100):
+    if proc is not None:
+     try:
       try: os.killpg(proc.pid,0)
-      except ProcessLookupError: outcome['processGroupGone']=True;break
-      time.sleep(0.1)
-    out.flush();os.fsync(out.fileno());err.flush();os.fsync(err.fileno())
+      except ProcessLookupError: outcome['processGroupGone']=True
+      else:
+       try: os.killpg(proc.pid,signal.SIGKILL)
+       except ProcessLookupError: pass
+       for _ in range(100):
+        try: os.killpg(proc.pid,0)
+        except ProcessLookupError: outcome['processGroupGone']=True;break
+        time.sleep(0.1)
+     except BaseException as exc: outcome['errors'].append('closure: '+type(exc).__name__+': '+str(exc))
+    for stream in (out,err):
+     try: stream.flush();os.fsync(stream.fileno())
+     except BaseException as exc: outcome['errors'].append('output flush: '+type(exc).__name__+': '+str(exc))
+ except BaseException as exc: outcome['errors'].append('output/start: '+type(exc).__name__+': '+str(exc))
  finally:
   outcome['seconds']=round(time.monotonic()-started,3)
+  if isinstance(outcome['exit'],int) and outcome['exit']<0: outcome['signal']=-outcome['exit']
   for name,path in [('stdout',stdout),('stderr',stderr)]:
-   if path.exists(): outcome[name]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
-  record.write_text(json.dumps(outcome,sort_keys=True)+'\n')
+   try:
+    if path.exists(): outcome[name]={'bytes':path.stat().st_size,'sha256':digest_file(path)}
+   except BaseException as exc: outcome['errors'].append(name+' hash: '+type(exc).__name__+': '+str(exc))
+  if not outcome['errors'] and outcome['exit']==0 and not outcome['timedOut'] and outcome['processGroupGone']: outcome['status']='COMPLETE'
+  with record.open('x') as f:
+   json.dump(outcome,f,sort_keys=True);f.write('\n');f.flush();os.fsync(f.fileno())
+  fd=os.open(str(ROOT),os.O_RDONLY|os.O_DIRECTORY)
+  try: os.fsync(fd)
+  finally: os.close(fd)
   print(json.dumps({'event':'command-result','result':outcome,'closureScope':'process group only; escaped descendants not proven absent'}),flush=True)
- if outcome['exit']!=0 or outcome['timedOut'] or not outcome['processGroupGone']: raise RuntimeError(label+' failed or process group remains')
+ if outcome['status']!='COMPLETE': raise RuntimeError(label+' incomplete; no retry')
 
 def main():
  if sys.version_info[:2]!=(3,9) or sys.platform!='linux': raise RuntimeError('requires reviewed Python 3.9 Linux image')
