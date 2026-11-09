@@ -20,7 +20,7 @@ class AccessError(Exception):
         self.code = code
         super().__init__()
 
-METHODS = frozenset(('whoami', 'list_buckets', 'bucket_info'))
+METHODS = frozenset(('whoami', 'list_buckets'))
 
 
 def obtain_secret():

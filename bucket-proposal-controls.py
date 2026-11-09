@@ -9,9 +9,13 @@ class API:
 api=adapter.ExplicitTokenApi(API,'synthetic-token')
 assert api.whoami()['name']=='Autismo-Yah';assert list(api.list_buckets(namespace='Autismo-Yah'))==[]
 assert all(row[1]['token']=='synthetic-token' for row in api._api.calls)
-try:api.run_job()
-except adapter.AccessError as e:assert e.code=='UNREVIEWED_HF_METHOD'
-else:raise AssertionError('write method exposed')
+for name in ('run_job','bucket_info'):
+ try:getattr(api,name)()
+ except adapter.AccessError as e:assert e.code=='UNREVIEWED_HF_METHOD'
+ else:raise AssertionError('unreviewed method exposed')
+try:api.whoami(token='different-synthetic-token')
+except adapter.AccessError as e:assert e.code=='AUTHORIZATION_SUBSTITUTION_REJECTED'
+else:raise AssertionError('token substitution accepted')
 class Fake:
  rows=[]
  def whoami(self):return {'name':'Autismo-Yah'}
@@ -30,5 +34,6 @@ def run(rows,ok):
 run([],True);run([types.SimpleNamespace(id='Autismo-Yah/synthetic')],True)
 run([types.SimpleNamespace(id='other/synthetic')],False)
 run([types.SimpleNamespace(id='Autismo-Yah/synthetic')]*2,False)
+run([types.SimpleNamespace(id='Autismo-Yah/item'+str(i)) for i in range(100)],True)
 run([types.SimpleNamespace(id='Autismo-Yah/item'+str(i)) for i in range(101)],False)
-print('PASS: synthetic token injection, write refusal, bounded namespace listing')
+print('PASS: synthetic token injection/substitution, method refusal and 100/101 listing boundary')
