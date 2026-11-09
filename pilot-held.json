@@ -1,0 +1,12 @@
+{
+  "name": "tsps-slug-dialogue-export-4e81",
+  "image": "python@sha256:70fbdeb75b0d071778ea1df4353ac959118ae8031bc5be33a95d1b8ea1fb8f08",
+  "flavor": "cpu-upgrade",
+  "timeout": 1800,
+  "attempts": 1,
+  "source": "428591a413a55973e2fde1f7c479d34e64057edf",
+  "payloadFile": "stage-bootstrap.py",
+  "executionHold": "HELD_UNREVIEWED_UNSELECTED",
+  "scope": "Pinned source parser regression and two clean offline dialogue exports only; no game, native quest behavior, client, or retail claim.",
+  "ownerSelection": null
+}

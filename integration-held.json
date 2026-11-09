@@ -1,0 +1,73 @@
+{
+  "attempts": 1,
+  "files": {
+    "commands.json": {
+      "bytes": 2040,
+      "sha256": "4e9e717a1f56f5ec9f88f7a826eb15e1a3fec3730f85175030b1d628b4b36292"
+    },
+    "extract-output.py": {
+      "bytes": 3703,
+      "sha256": "49a09da1015de2802313ed11c2c03358675b2580140f4203d83ecc6280bdcce7"
+    },
+    "hf-pilot.py": {
+      "bytes": 5715,
+      "sha256": "d697c71f016f0c87c65f16cf15b56f6e38935f92850ac220fad950ae9ff7e924"
+    },
+    "output-frames.py": {
+      "bytes": 4657,
+      "sha256": "fb3726a93596bec86de6e20c601072ec193a4d6e6016d4dd62a931601ea30198"
+    },
+    "package.json": {
+      "bytes": 118,
+      "sha256": "ca7b7eda9eea0ce68f5055683619b9144112fbd93f7b7ea316df695e8c2286f3"
+    },
+    "pilot-held.json": {
+      "bytes": 521,
+      "sha256": "165859ce0e93c27ae3d49c24927121734bf8c5f47ed391a2ab6da20f98ed90ab"
+    },
+    "reassemble-output.py": {
+      "bytes": 10013,
+      "sha256": "f1b908d47dc6874d4737103752a224cda4c59862ecabf2999751a567c76bdc03"
+    },
+    "runner-controls.py": {
+      "bytes": 4849,
+      "sha256": "a52922c559524910a5f62b2b1b9803c58cd66a346fe9b47f279e924dc65f1e60"
+    },
+    "runner.py": {
+      "bytes": 11696,
+      "sha256": "b4ca3792357dfb0b951806d3e18508f88bc300aa470872b96b09479f5628bc97"
+    },
+    "source-tree.json": {
+      "bytes": 7811710,
+      "sha256": "264768453a032098643a544dc342f33f7f2c661b61792582ce0deca9bb885a51"
+    },
+    "stage-bootstrap.py": {
+      "bytes": 1892,
+      "sha256": "00a598bac82f5d3eb772a7cf6150d9a63b763d7ef2af7d4da38430d4d3bd4873"
+    },
+    "transport-controls.py": {
+      "bytes": 7773,
+      "sha256": "f6fbae7e1e5e33d0c3f246d1cadbb3f47d53aaf021345cf9cbbe9a3c9b540c96"
+    },
+    "wheels.json": {
+      "bytes": 4531,
+      "sha256": "3507cb7213863d82ae3a36f3324917f58a10f770f1fafa53a0ea19660fa2440d"
+    }
+  },
+  "flavor": "cpu-upgrade",
+  "holds": [
+    "integrated source and exact profile direct peer review",
+    "authenticated source scoped reconciliation and prior custody",
+    "fresh exclusive local intent and single collector",
+    "provider terminal and raw contiguous frame retention",
+    "actual image/wheel execution and full output reassembly",
+    "network isolation and transient mutation not proven"
+  ],
+  "image": "python@sha256:70fbdeb75b0d071778ea1df4353ac959118ae8031bc5be33a95d1b8ea1fb8f08",
+  "inputRefCommit": "b994cad2b39539293c3a31ec9bfba4c8df4a46e5",
+  "owner": "4e81ba8a-625e-4909-8635-5bc9ca91cd77",
+  "scope": "source/export only; no gameplay or native quest claim",
+  "sourceCommit": "428591a413a55973e2fde1f7c479d34e64057edf",
+  "status": "HELD_UNREVIEWED_UNSELECTED",
+  "timeout": 1800
+}
