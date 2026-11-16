@@ -16,6 +16,61 @@ def page(extra="", item_id="554", respawn="100"):
 
 
 class ItemSpawnExportTests(unittest.TestCase):
+    def test_case_alias_spawn_is_exported_once_with_both_source_identities(self):
+        text = (
+            "{{Infobox Item|name=Staff of Armadyl|id=84|respawn=100}}"
+            "{{ItemSpawnLine|name=Staff of Armadyl|location=Temple|members=Yes|2638,9906}}"
+        )
+        pages = {"Staff of Armadyl": text, "Staff of armadyl": text.replace("Armadyl", "armadyl")}
+        [spawn] = parse_pages(pages)
+        self.assertEqual((spawn["id"], spawn["quantity"], spawn["infobox_respawn_ticks"]), (84, 1, 100))
+        self.assertIsNone(spawn["tile_respawn_raw"])
+        self.assertEqual(spawn["unresolved_reasons"], [])
+        self.assertEqual([alias["page"] for alias in spawn["source_aliases"]], sorted(pages))
+        self.assertEqual(len({alias["page_sha256"] for alias in spawn["source_aliases"]}), 2)
+        raw = json.dumps(pages).encode()
+        self.assertEqual(build_export(raw), build_export(raw))
+        self.assertEqual(parse_pages(dict(reversed(list(pages.items())))), [spawn])
+
+    def test_case_alias_conflicts_hold_every_alias_instead_of_picking_a_timer(self):
+        text = "{{Infobox Item|name=Fire rune|id=554|respawn=100}}{{ItemSpawnLine|3026,3637}}"
+        rows = parse_pages({"Fire rune": text, "Fire Rune": text.replace("respawn=100", "respawn=50")})
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["infobox_respawn_ticks"] for row in rows}, {50, 100})
+        self.assertTrue(all("conflicting-source-alias-state" in row["unresolved_reasons"] for row in rows))
+        self.assertTrue(all("source_aliases" not in row for row in rows))
+        unresolved = parse_pages({"Fire rune": text, "Fire Rune": text.replace("3026,3637", "3026,3637,respawn:50")})
+        self.assertTrue(all("conflicting-source-alias-state" in row["unresolved_reasons"] for row in unresolved))
+
+    def test_case_alias_reconciliation_preserves_distinct_tiles_and_unrelated_pages(self):
+        text = "{{Infobox Item|name=Fire rune|id=554|respawn=100}}{{ItemSpawnLine|3026,3637}}"
+        unrelated = "{{Infobox Item|name=Earth rune|id=557|respawn=100}}{{ItemSpawnLine|3026,3637}}"
+        expected = parse_pages({"Earth rune": unrelated})[0]
+        rows = parse_pages({"Fire rune": text, "Fire Rune": text.replace("3026,3637", "3027,3637"), "Earth rune": unrelated})
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0], expected)
+        self.assertTrue(all("source_aliases" not in row for row in rows))
+
+    def test_incomplete_case_alias_identity_holds_the_valid_sibling(self):
+        text = "{{Infobox Item|name=Fire rune|id=554|respawn=100}}{{ItemSpawnLine|3026,3637}}"
+        for uncertain in (
+            text.replace("id=554", "id=554|id2=557"),
+            text.replace("|3026,3637", "|plane=basement|3026,3637"),
+            text.replace("3026,3637", "3026,unknown"),
+        ):
+            with self.subTest(uncertain=uncertain):
+                rows = parse_pages({"Fire rune": text, "Fire Rune": uncertain})
+                self.assertEqual(len(rows), 2)
+                self.assertTrue(all("conflicting-source-alias-state" in row["unresolved_reasons"] for row in rows))
+                self.assertTrue(all("source_aliases" not in row for row in rows))
+        # Fully resolved different IDs and known-different tiles do not implicate each other.
+        distinct = parse_pages({"Fire rune": text, "Fire Rune": text.replace("id=554", "id=557")})
+        self.assertEqual({row["id"] for row in distinct}, {554, 557})
+        self.assertTrue(all(row["unresolved_reasons"] == [] for row in distinct))
+        unrelated = parse_pages({"Fire rune": text, "Fire Rune": text.replace("id=554", "id=554|id2=557").replace("3026,3637", "3027,3637")})
+        valid = next(row for row in unrelated if row["id"] == 554)
+        self.assertEqual(valid["unresolved_reasons"], [])
+
     def test_illegal_item_can_explicitly_award_a_different_item_on_pickup(self):
         display = (
             "{{Illegal Item}}"

@@ -214,6 +214,38 @@
             }
           },
           "required": true
+        },
+        "source_aliases": {
+          "type": "list",
+          "required": false,
+          "schema": {
+            "type": "dict",
+            "schema": {
+              "page": {
+                "type": "string",
+                "required": true
+              },
+              "page_sha256": {
+                "type": "string",
+                "regex": "[a-f0-9]{64}",
+                "required": true
+              },
+              "row_index": {
+                "type": "integer",
+                "min": 0,
+                "required": true
+              },
+              "argument": {
+                "type": "string",
+                "required": true
+              },
+              "argument_index": {
+                "type": "integer",
+                "min": 0,
+                "required": true
+              }
+            }
+          }
         }
       }
     },

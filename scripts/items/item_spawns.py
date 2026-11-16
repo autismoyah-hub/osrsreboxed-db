@@ -98,8 +98,79 @@ def _pickup_replacement(text, pages):
     return replacement
 
 
+def _reconcile_case_aliases(rows):
+    """Keep one source-complete spawn for case-only page aliases, with provenance.
+
+    A disagreement never picks a winning alias: every row stays visible and held.
+    Repeated coordinates on the same page are outside this alias correction.
+    """
+    identity = ("id", "x", "y", "plane")
+
+    def could_share_identity(first, second):
+        for key in identity:
+            left, right = first[key], second[key]
+            if type(left) is int and type(right) is int and left != right:
+                return False
+            if key == "id":
+                for resolved, uncertain in ((first, second), (second, first)):
+                    candidates = uncertain.get("candidate_ids", [])
+                    if type(resolved["id"]) is int and candidates and resolved["id"] not in candidates:
+                        return False
+        return True
+
+    by_title = {}
+    for row in rows:
+        by_title.setdefault(row["page"].casefold(), []).append(row)
+    # An incomplete sibling cannot disappear merely because it lacks a group key.
+    for aliases in by_title.values():
+        for index, first in enumerate(aliases):
+            for second in aliases[index + 1:]:
+                if first["page"] == second["page"]:
+                    continue
+                if all(type(row[key]) is int for row in (first, second) for key in identity):
+                    continue
+                if could_share_identity(first, second):
+                    for row in (first, second):
+                        row["unresolved_reasons"] = sorted(
+                            set(row["unresolved_reasons"]) | {"conflicting-source-alias-state"}
+                        )
+    groups = {}
+    for index, row in enumerate(rows):
+        if all(type(row[key]) is int for key in identity):
+            key = (row["page"].casefold(), row["id"], row["x"], row["y"], row["plane"])
+            groups.setdefault(key, []).append(index)
+    removed = set()
+    for indices in groups.values():
+        titles = {rows[index]["page"] for index in indices}
+        if len(titles) < 2 or len(titles) != len(indices):
+            continue
+        aliases = [rows[index] for index in indices]
+        fields = (
+            "id", "x", "y", "plane", "members", "quantity", "location",
+            "infobox_respawn_ticks", "infobox_respawn_raw", "tile_respawn_raw",
+            "coordinate_qualifiers", "coordinate_qualifier_arguments", "pickup_replacement",
+        )
+        states = {
+            json.dumps({key: row.get(key) for key in fields}, sort_keys=True)
+            for row in aliases
+        }
+        if len(states) != 1 or any(row["unresolved_reasons"] for row in aliases):
+            for row in aliases:
+                row["unresolved_reasons"] = sorted(
+                    set(row["unresolved_reasons"]) | {"conflicting-source-alias-state"}
+                )
+            continue
+        canonical = aliases[0]  # parse_pages visits sorted source titles.
+        canonical["source_aliases"] = [
+            {key: row[key] for key in ("page", "page_sha256", "row_index", "argument", "argument_index")}
+            for row in aliases
+        ]
+        removed.update(indices[1:])
+    return [row for index, row in enumerate(rows) if index not in removed]
+
+
 def parse_pages(pages):
-    """All positional spawn arguments survive, including repeated/malformed ones."""
+    """Preserve spawn arguments; reconcile agreeing case aliases with provenance."""
     rows = []
     for title, text in sorted(pages.items()):
         if not isinstance(text, str):
@@ -252,7 +323,7 @@ def parse_pages(pages):
                         ),
                     }
                 )
-    return rows
+    return _reconcile_case_aliases(rows)
 
 
 def build_export(raw_bytes):
